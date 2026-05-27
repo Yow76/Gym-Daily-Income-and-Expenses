@@ -31,14 +31,17 @@ texts = {
         "trans_type": "交易類型",
         "income": "收入",
         "expense": "支出",
-        "item_income": "收入項目",
+        "item_income": "收入大類",
         "item_expense": "支出項目",
+        "sub_membership": "特定會員卡種",
+        # 收入大類
         "walk_in": "Walk-in (單次入場)",
         "membership": "Membership Fee (會員學費)",
         "pt": "Personal Training (PT 私教課)",
         "group_class": "Group Class (團體課)",
         "merchandise": "Drinks / Merchandise (飲料與商品)",
         "other_inc": "Others (其他收入)",
+        # 支出大類
         "rent": "店租/水電 (Rent/Utilities)",
         "stock": "進貨成本 (Inventory)",
         "salary": "員工薪資 (Salary)",
@@ -77,14 +80,17 @@ texts = {
         "trans_type": "Transaction Type",
         "income": "Income",
         "expense": "Expense",
-        "item_income": "Income Item",
+        "item_income": "Income Category",
         "item_expense": "Expense Item",
+        "sub_membership": "Specific Membership Type",
+        # Income Categories
         "walk_in": "Walk-in",
         "membership": "Membership Fee",
         "pt": "Personal Training (PT)",
         "group_class": "Group Class",
         "merchandise": "Drinks / Merchandise",
         "other_inc": "Others",
+        # Expense Items
         "rent": "Rent/Utilities",
         "stock": "Inventory/Stock",
         "salary": "Staff Salary",
@@ -126,13 +132,33 @@ st.sidebar.header(t["sidebar_header"])
 date = st.sidebar.date_input(t["date"], datetime.date.today())
 trans_type = st.sidebar.selectbox(t["trans_type"], [t["income"], t["expense"]])
 
-# 使用規劃的新項目清單
+# 最終儲存進項目的欄位文字
+final_item = ""
+
 if trans_type in ["收入", "Income"]:
     item_options = [t["walk_in"], t["membership"], t["pt"], t["group_class"], t["merchandise"], t["other_inc"]]
-    item = st.sidebar.selectbox(t["item_income"], item_options)
+    selected_cat = st.sidebar.selectbox(t["item_income"], item_options)
+    
+    # 🌟 重點功能：如果選了 Membership Fee，自動展開細分選單
+    if selected_cat == t["membership"]:
+        membership_sub_types = [
+            "Fitness Renew (NEW)",
+            "Fitness(Renew)(AB)",
+            "1M NEWJOIN PROMO",
+            "Fitness Student (New)",
+            "Fitness Student (Renew)",
+            "Fitness Renew 12M (Promo)",
+            "GX 10 classes",
+            "7Days",
+            "Others/Other Promo"
+        ]
+        selected_sub = st.sidebar.selectbox(t["sub_membership"], membership_sub_types)
+        final_item = f"{t['membership']} - {selected_sub}"
+    else:
+        final_item = selected_cat
 else:
     item_options = [t["rent"], t["stock"], t["salary"], t["other_exp"]]
-    item = st.sidebar.selectbox(t["item_expense"], item_options)
+    final_item = st.sidebar.selectbox(t["item_expense"], item_options)
 
 amount = st.sidebar.number_input(t["amount"], min_value=0.0, step=1.0, format="%.2f")
 
@@ -154,7 +180,7 @@ if st.sidebar.button(t["save_btn"]):
     else:
         new_data = pd.DataFrame([{
             "日期": date, "類型": "收入" if trans_type in ["收入", "Income"] else "支出", 
-            "項目": item, "金額": amount, "支付方式": payment_method, "卡片細分": card_type, "備註": note
+            "項目": final_item, "金額": amount, "支付方式": payment_method, "卡片細分": card_type, "備註": note
         }])
         df = pd.concat([df, new_data], ignore_index=True)
         df.to_csv(DATA_FILE, index=False)
@@ -167,7 +193,6 @@ tab1, tab2 = st.tabs([t["tab1"], t["tab2"]])
 with tab1:
     st.subheader(t["history_title"])
     if not df.empty:
-        # 確保有資料才顯示
         st.dataframe(df.sort_values(by="日期", ascending=False), use_container_width=True)
         if st.button(t["del_btn"]):
             df = df.drop(df.index[-1])
@@ -180,7 +205,6 @@ with tab1:
 with tab2:
     st.subheader(t["report_title"])
     if not df.empty:
-        # 確保 '日期' 欄位轉為字串處理月份
         df['月份'] = df['日期'].apply(lambda x: x.strftime('%Y-%m') if hasattr(x, 'strftime') else str(x)[:7])
         all_months = sorted(list(df['月份'].unique()), reverse=True)
         selected_month = st.selectbox(t["select_month"], all_months)
@@ -200,14 +224,13 @@ with tab2:
         
         st.write(f"### {t['recon_title']} ({selected_month})")
         
-        # 增加安全檢查，防範分組報錯
         try:
             pay_summary = month_df[month_df['類型'] == "收入"].groupby(["支付方式", "卡片細分"])["金額"].sum().reset_index()
             pay_summary.columns = [t["pay_method"], t["detail_col"], t["amount_col"]]
             st.table(pay_summary)
         except:
-            st.dataframe(month_df[month_df['類型'] == "收入"][["日期", "項目", "金額", "支付方式", "卡片細分"]])
-        
+            st.dataframe(month_df[month_df['類型'] == "收入"][["日期", "項目", "金額", "支付方式", "Card 細分"]])
+            
         csv = month_df.to_csv(index=False).encode('utf-8')
         st.download_button(label=t["download_btn"], data=csv, file_name=f"Report_{selected_month}.csv", mime='text/csv')
     else:
