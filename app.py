@@ -132,7 +132,7 @@ payment_method = st.sidebar.selectbox(t["pay_method"], pay_options)
 card_type = "-"
 if payment_method in ["信用卡/Debit卡", "Credit/Debit Card"]:
     card_type = st.sidebar.selectbox(t["card_sub"], [
-        "Visa (Maybank)", "Mastercard (Public Bank)", 
+        "Autodebit (Credit Card)", "Visa (Maybank)", "Mastercard (Public Bank)", 
         "Visa (CIMB)", "Debit Card", "Others"
     ])
 
@@ -195,75 +195,3 @@ with tab2:
         st.download_button(label=t["download_btn"], data=csv, file_name=f"Report_{selected_month}.csv", mime='text/csv')
     else:
         st.info(t["no_data"])
-import pandas as pd
-
-file_may26 = "05.MAY 2026.xlsx - MAY 26.csv"
-file_list = "05.MAY 2026.xlsx - List.csv"
-
-df_may26 = pd.read_csv(file_may26)
-df_list = pd.read_csv(file_list)
-
-print("--- MAY 26 Head ---")
-print(df_may26.head(10))
-print("\n--- MAY 26 Info ---")
-print(df_may26.info())
-
-print("\n--- List Head ---")
-print(df_list.head(10))
-print("\n--- List Info ---")
-print(df_list.info())
-print(df_may26[df_may26['Unnamed: 0'].notnull()][['Unnamed: 0', 'Unnamed: 1', 'Unnamed: 2']].head(20))
-print(df_may26.iloc[30:65])
-# Let's inspect rows where Unnamed: 8 (Card) has a non-zero value and look at the context.
-# We need to trace the date for each row.
-
-current_date = None
-card_records = []
-
-for idx, row in df_may26.iterrows():
-    # Detect date change
-    val_0 = str(row['Unnamed: 0']).strip() if pd.notnull(row['Unnamed: 0']) else ""
-    if val_0.startswith("2026-"):
-        current_date = val_0
-    
-    # Check if there is a card payment
-    card_val = row['Unnamed: 8']
-    if pd.notnull(card_val):
-        try:
-            # try to convert to float
-            card_amount = float(str(card_val).replace(',', '').strip())
-            if card_amount > 0:
-                # Get details
-                receipt = row['Unnamed: 1']
-                item = row['Unnamed: 2']
-                qty = row['Unnamed: 3']
-                name = row['Unnamed: 4']
-                
-                card_records.append({
-                    "Index": idx,
-                    "Date": current_date,
-                    "Receipt": receipt,
-                    "Item": item,
-                    "Qty": qty,
-                    "Name": name,
-                    "Card Amount": card_amount
-                })
-        except ValueError:
-            # Not a number (could be header or string like "Card")
-            pass
-
-df_card = pd.DataFrame(card_records)
-print(df_card)
-# Let's clean up and filter only rows that represent real transactions (where Receipt is not null)
-individual_cards = df_card[df_card['Receipt'].notnull()].copy()
-print(individual_cards[['Date', 'Receipt', 'Item', 'Name', 'Card Amount']])
-print(f"Total individual card transactions count: {len(individual_cards)}")
-print(f"Sum of individual card amounts: {individual_cards['Card Amount'].sum()}")
-# Let's see if columns Unnamed: 12, Unnamed: 13 onwards contain any card breakdown info for these specific indices
-card_indices = individual_cards['Index'].tolist()
-print(df_may26.loc[card_indices, ['Unnamed: 0', 'Unnamed: 4', 'Unnamed: 8', 'Unnamed: 12', 'Unnamed: 13']].dropna(subset=['Unnamed: 12', 'Unnamed: 13'], how='all'))
-card_summary = individual_cards.groupby('Item').agg(
-    Count=('Card Amount', 'count'),
-    Total_Amount=('Card Amount', 'sum')
-).reset_index()
-print(card_summary)
