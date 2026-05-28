@@ -35,7 +35,7 @@ if "gym_df" not in st.session_state:
 if "form_version" not in st.session_state:
     st.session_state.form_version = 0
 
-# 🌟 透過 Callbacks 處理資料同步（完全不調用 rerun 指令）
+# 🌟 回呼函式機制（安全無 rerun）
 def save_record_on_click(date_val, type_val, cat_val, sub_val, amt_val, pay_val, card_val, receipt_val, uploaded_file_obj, note_val):
     if amt_val <= 0:
         st.session_state.form_error = True
