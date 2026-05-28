@@ -13,10 +13,31 @@ UPLOAD_DIR = "uploaded_receipts" # 建立資料夾存儲支出收據照片
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
-# 載入現有數據
+# 載入現有數據（加入強大自動修復與對齊欄位功能）
 if os.path.exists(DATA_FILE):
     try:
         df = pd.read_csv(DATA_FILE)
+        
+        # 💡 自動對齊舊數據格式：如果發現是舊版欄位名，自動強制更名為標準版
+        rename_dict = {
+            "Card 細分": "卡片細分",
+            "CardSubType": "卡片細分",
+            "項目": "細分項目",
+            "Category": "大類項目",
+            "Item": "細分項目",
+            "ReceiptNo": "收據號"
+        }
+        df = df.rename(columns=rename_dict)
+        
+        # 檢查必備欄位，如果缺少就自動補齊空欄位，防止報錯
+        required_cols = ["日期", "類型", "大類項目", "細分項目", "金額", "支付方式", "卡片細分", "收據號", "證明文件", "備註"]
+        for col in required_cols:
+            if col not in df.columns:
+                df[col] = "-"
+        
+        # 如果大類項目全是空的（比如剛導入舊數據時），把舊的“項目”內容安全搬移過去
+        df.loc[df["大類項目"] == "-", "大類項目"] = "Membership"
+                
         df['日期'] = pd.to_datetime(df['日期']).dt.date
     except Exception as e:
         df = pd.DataFrame(columns=["日期", "類型", "大類項目", "細分項目", "金額", "支付方式", "卡片細分", "收據號", "證明文件", "備註"])
@@ -43,8 +64,7 @@ lang = st.sidebar.radio("Language / 語言", ["繁體中文", "English"])
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🔒 Admin Auth / 管理員認證")
 admin_password = st.sidebar.text_input("Enter Admin Password / 輸入密碼", type="password", help="輸入密碼解鎖員工薪資數據")
-# 💡 在這裡修改你的管理員密碼，目前預設為 8888
-is_admin = (admin_password == "8888") 
+is_admin = (admin_password == "8888") # 預設管理員密碼
 
 if is_admin:
     st.sidebar.success("🔑 Admin Mode Active / 已解鎖管理員權限")
@@ -151,25 +171,15 @@ form_receipt = "-"
 saved_file_path = "-"
 
 if trans_type in ["收入", "Income"]:
-    # 1. 完全採用你發送的圖片 6 大分類
-    income_categories = [
-        "Walk in",
-        "Membership",
-        "Personal Training",
-        "Group Class",
-        "Drinks / Merchandise",
-        "Others"
-    ]
+    income_categories = ["Walk in", "Membership", "Personal Training", "Group Class", "Drinks / Merchandise", "Others"]
     form_cat = st.sidebar.selectbox(t["cat_income"], income_categories)
     form_sub = st.sidebar.text_input(t["sub_item"], placeholder="例如：Fitness Renew / Coach Ernest")
-    form_receipt = st.sidebar.text_input(t["receipt_no"]) # 2. 收據號
+    form_receipt = st.sidebar.text_input(t["receipt_no"])
 else:
-    # 支出分類
     expense_categories = ["店租/水電 (Rent/Utilities)", "進貨成本 (Inventory)", "員工薪資 (Salary)", "其他支出 (Others)"]
     form_cat = st.sidebar.selectbox(t["cat_expense"], expense_categories)
     form_sub = st.sidebar.text_input(t["sub_item"], placeholder="例如：May 水電費 / 買水進貨")
     
-    # 3. 支出上傳照片/文件證明
     uploaded_file = st.sidebar.file_uploader(t["upload_doc"], type=["png", "jpg", "jpeg", "pdf"])
     if uploaded_file is not None:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -179,8 +189,6 @@ else:
             f.write(uploaded_file.getbuffer())
 
 amount = st.sidebar.number_input(t["amount"], min_value=0.0, step=1.0, format="%.2f")
-
-# 支付管道
 pay_options = [t["cash"], t["qr"], t["transfer"], t["card"]]
 payment_method = st.sidebar.selectbox(t["pay_method"], pay_options)
 
@@ -193,7 +201,6 @@ if payment_method in ["信用卡/Debit卡", "Credit/Debit Card"]:
 
 note = st.sidebar.text_input(t["note"])
 
-# 儲存按鈕觸發
 if st.sidebar.button(t["save_btn"]):
     if amount <= 0:
         st.sidebar.error(t["err_amount"])
@@ -210,27 +217,22 @@ if st.sidebar.button(t["save_btn"]):
         st.sidebar.success(t["success_save"])
         st.rerun()
 
-
-# --- 隱私與安全過濾：非管理者看不到員工薪資 ---
+# --- 權限鎖過濾 ---
 if is_admin:
     display_df = df.copy()
 else:
-    # 6. 如果不是管理員，過濾掉所有大類項目為「員工薪資 (Salary)」的支出數據
     display_df = df[df["大類項目"] != "員工薪資 (Salary)"].copy()
 
-
-# --- 主畫面：各項報告分頁 ---
+# --- 主畫面分頁 ---
 tab1, tab2 = st.tabs([t["tab1"], t["tab2"]])
 
 with tab1:
-    # 4. 每日營運 Closing 看板
     st.subheader(t["day_report"])
-    all_days = sorted(list(df['日期'].unique()), reverse=True)
-    if all_days:
+    if not display_df.empty:
+        all_days = sorted(list(df['日期'].unique()), reverse=True)
         selected_day = st.selectbox(t["select_day"], all_days, key="day_select")
         day_df = display_df[display_df['日期'] == selected_day]
         
-        # 每日指標計算
         day_income = day_df[day_df['類型'] == "收入"]['金額'].sum()
         day_expense = day_df[day_df['類型'] == "支出"]['金額'].sum()
         day_net = day_income - day_expense
@@ -240,16 +242,19 @@ with tab1:
         c2.metric("今日總支出 / Today Expense" + ("" if is_admin else " (薪資除外)"), f"RM {day_expense:,.2f}")
         c3.metric("今日結餘結算 / Today Balance", f"RM {day_net:,.2f}")
         
-        # 今日收款管道拆解
         st.write("#### 💳 今日支付方式細分 (Today Payments Breakdown)")
-        if not day_df[day_df['類型'] == "收入"].empty:
-            day_summary = day_df[day_df['類型'] == "收入"].groupby(["支付方式", "卡片細分"])["金額"].sum().reset_index()
-            day_summary.columns = [t["pay_method"], t["detail_col"], t["amount_col"]]
-            st.table(day_summary)
+        day_inc_df = day_df[day_df['類型'] == "收入"]
+        if not day_inc_df.empty:
+            # 增加安全檢查防範缺失欄位
+            try:
+                day_summary = day_inc_df.groupby(["支付方式", "卡片細分"])["金額"].sum().reset_index()
+                day_summary.columns = [t["pay_method"], t["detail_col"], t["amount_col"]]
+                st.table(day_summary)
+            except:
+                st.dataframe(day_inc_df[["日期", "大類項目", "細分項目", "金額", "支付方式"]])
         else:
             st.info("今日暫無收入款項。")
             
-        # 提供每日報告導出
         day_csv = day_df.to_csv(index=False).encode('utf-8')
         st.download_button(label=f"📥 {t['download_csv']} ({selected_day})", data=day_csv, file_name=f"Daily_Report_{selected_day}.csv", mime='text/csv')
     else:
@@ -257,12 +262,9 @@ with tab1:
         
     st.markdown("---")
     
-    # 歷史明細表格 (包含收據點擊下載功能)
     st.subheader(t["history_title"])
     if not display_df.empty:
         grid_df = display_df.sort_values(by="日期", ascending=False).copy()
-        
-        # 將收據路徑轉成可點擊的 HTML 網址連結
         links = []
         for path in grid_df["證明文件"]:
             if path != "-" and os.path.exists(str(path)):
@@ -271,8 +273,7 @@ with tab1:
                 links.append("-")
         grid_df["證明文件連結"] = links
         
-        # 顯示網頁表格
-        st.write("💡 *小提示：如果你上傳了支出證明，可以在最右側欄位直接點擊查看或下載照片。*")
+        st.write("💡 *小提示：可於最右側直欄直接點擊查看或下載上傳的支出證明。*")
         st.write(grid_df[["日期", "類型", "大類項目", "細分項目", "金額", "支付方式", "卡片細分", "收據號", "備註", "證明文件連結"]].to_html(escape=False, index=False), unsafe_allow_html=True)
         
         st.markdown("<br>", unsafe_allow_html=True)
@@ -285,7 +286,6 @@ with tab1:
         st.info(t["no_data"])
 
 with tab2:
-    # 5. 月度財務統計與核心項目分析報告
     st.subheader(t["report_title"])
     if not display_df.empty:
         display_df['月份'] = display_df['日期'].apply(lambda x: x.strftime('%Y-%m') if hasattr(x, 'strftime') else str(x)[:7])
@@ -305,7 +305,6 @@ with tab2:
         
         st.markdown("---")
         
-        # 項目分析分析報告：分析哪種業務最賺錢
         st.write(f"### 📈 {selected_month} 各大核心業務收入佔比分析")
         inc_df = month_df[month_df['類型'] == "收入"]
         if not inc_df.empty:
@@ -318,14 +317,15 @@ with tab2:
             
         st.markdown("---")
         
-        # 支付管道對帳統計
         st.write(f"### 💳 {t['recon_title']} ({selected_month})")
         if not inc_df.empty:
-            pay_summary = inc_df.groupby(["支付方式", "卡片細分"])["金額"].sum().reset_index()
-            pay_summary.columns = [t["pay_method"], t["detail_col"], t["amount_col"]]
-            st.table(pay_summary)
+            try:
+                pay_summary = inc_df.groupby(["支付方式", "卡片細分"])["金額"].sum().reset_index()
+                pay_summary.columns = [t["pay_method"], t["detail_col"], t["amount_col"]]
+                st.table(pay_summary)
+            except:
+                st.dataframe(inc_df[["日期", "大類項目", "細分項目", "金額", "支付方式"]])
             
-        # 月報表導出
         month_csv = month_df.to_csv(index=False).encode('utf-8')
         st.download_button(label=f"📥 {t['download_csv']} ({selected_month}月報)", data=month_csv, file_name=f"Monthly_Report_{selected_month}.csv", mime='text/csv')
     else:
