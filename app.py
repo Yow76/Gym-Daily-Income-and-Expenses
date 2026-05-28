@@ -8,34 +8,32 @@ import base64
 st.set_page_config(page_title="TheOneGym Financial System", layout="wide")
 
 # --- 核心檔案與資料夾路徑設定 ---
-DATA_FILE = "gym_records_v3.csv" # 升級新資料庫，一勞永逸避開任何舊隱藏快取
+DATA_FILE = "gym_records_v4.csv" # 升級全新乾淨資料庫，徹底避開所有舊隱藏快取
 UPLOAD_DIR = "uploaded_receipts"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
-# 標準 10 大欄位
+# 標準 10 大必備欄位
 standard_cols = ["日期", "類型", "大類項目", "細分項目", "金額", "支付方式", "卡片細分", "收據號", "證明文件", "備註"]
 
-# 初始化一個用來控制表單刷新的計數器
+# 🌟 核心記憶庫初始化：確保全劇資料只在啟動時載入一次，後續由記憶體即時接管
+if "gym_df" not in st.session_state:
+    if os.path.exists(DATA_FILE):
+        try:
+            loaded_df = pd.read_csv(DATA_FILE)
+            loaded_df.columns = [str(c).strip() for c in loaded_df.columns]
+            for col in standard_cols:
+                if col not in loaded_df.columns:
+                    loaded_df[col] = "-"
+            st.session_state.gym_df = loaded_df[standard_cols]
+        except:
+            st.session_state.gym_df = pd.DataFrame(columns=standard_cols)
+    else:
+        st.session_state.gym_df = pd.DataFrame(columns=standard_cols)
+
+# 用於記帳後自動清空欄位的版本計數器
 if "form_version" not in st.session_state:
     st.session_state.form_version = 0
-
-# 載入現有數據
-if os.path.exists(DATA_FILE):
-    try:
-        df = pd.read_csv(DATA_FILE)
-        df.columns = [str(c).strip() for c in df.columns]
-    except:
-        df = pd.DataFrame(columns=standard_cols)
-else:
-    df = pd.DataFrame(columns=standard_cols)
-
-# 強制欄位檢查
-for col in standard_cols:
-    if col not in df.columns:
-        df[col] = "-"
-
-df['日期'] = pd.to_datetime(df['日期']).dt.date
 
 # --- 圖片與文件下載小工具 ---
 def get_image_download_link(file_path, text):
@@ -83,9 +81,9 @@ texts = {
         "success_save": "紀錄已成功儲存！",
         "tab1": "📋 當日 Closing 與明細",
         "tab2": "📈 月度財務統計與分析",
-        "history_title": "📅 記帳明細歷史",
+        "history_title": "📅 所有記帳歷史明細",
         "del_btn": "🗑️ 刪除最後一筆紀錄",
-        "del_success": "已刪除最後一筆紀錄！",
+        "del_success": "已成功刪除最後一筆紀錄！",
         "no_data": "目前尚無數據，請從左側開始輸入。",
         "m_income": "總收入 (Total Income)",
         "m_expense": "總支出 (Total Expense)",
@@ -150,7 +148,7 @@ t = texts[lang]
 st.title(t["title"])
 st.markdown("---")
 
-# --- 側邊欄：數據輸入介面 (加上動態 key 綁定防警告) ---
+# --- 側邊欄：數據輸入介面 ---
 st.sidebar.header(t["sidebar_header"])
 v = st.session_state.form_version
 
@@ -166,7 +164,6 @@ if trans_type in ["收入", "Income"]:
     if form_cat == "Walk in":
         walk_in_options = ["Walk in Gym", "Walk in Group Class", "Seven Day Pass"]
         form_sub = st.sidebar.selectbox(t["sub_item"], walk_in_options, key=f"sub_walk_{v}")
-        
     elif form_cat == "Membership":
         membership_options = [
             "Fitness Renew (NEW)", "Fitness Renew (OLD)", "Fitness Renew 3M", "Fitness Renew 6M",
@@ -175,20 +172,16 @@ if trans_type in ["收入", "Income"]:
             "Fitness Unlimited Group Class Promo 138", "Unlimited Group Class Package 110", "Others/Other Promo"
         ]
         form_sub = st.sidebar.selectbox(t["sub_item"], membership_options, key=f"sub_mem_{v}")
-        
     elif form_cat == "Personal Training":
         pt_type = st.sidebar.selectbox(t["pt_type"], ["Inhouse Trainer", "Freelance Trainer"], key=f"pt_type_{v}")
         sessions = st.sidebar.text_input(t["manual_sessions"], placeholder="例如: 10堂課 / 15堂課", key=f"pt_sess_{v}")
         form_sub = f"{pt_type} ({sessions})"
-        
     elif form_cat == "Group Class":
         gc_sessions = st.sidebar.text_input(t["manual_sessions"], placeholder="例如: Zumba 5堂課 / Yoga 12堂課", key=f"gc_sess_{v}")
         form_sub = gc_sessions if gc_sessions.strip() else "Group Class"
-        
     elif form_cat == "Drinks / Merchandise":
         drinks_options = ["Mineral water 1.5L", "Mineral water 500ml", "100 號 (100 Plus)", "Vida", "Protein (乳清蛋白)", "Others"]
         form_sub = st.sidebar.selectbox(t["sub_item"], drinks_options, key=f"drinks_{v}")
-        
     elif form_cat == "Others":
         form_sub = "-"
         
@@ -201,11 +194,14 @@ else:
     
     uploaded_file = st.sidebar.file_uploader(t["upload_doc"], type=["png", "jpg", "jpeg", "pdf"], key=f"upload_{v}")
     if uploaded_file is not None:
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        saved_file_name = f"{timestamp}_{uploaded_file.name}"
-        saved_file_path = os.path.join(UPLOAD_DIR, saved_file_name)
-        with open(saved_file_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
+        try:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            saved_file_name = f"{timestamp}_{uploaded_file.name}"
+            saved_file_path = os.path.join(UPLOAD_DIR, saved_file_name)
+            with open(saved_file_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+        except:
+            saved_file_path = "-"
 
 amount = st.sidebar.number_input(t["amount"], min_value=0.0, step=1.0, format="%.2f", key=f"amt_{v}")
 pay_options = [t["cash"], t["qr"], t["transfer"], t["card"]]
@@ -220,40 +216,36 @@ if payment_method in ["信用卡/Debit卡", "Credit/Debit Card"]:
 
 note = st.sidebar.text_input(t["note"], key=f"note_{v}")
 
+# 儲存按鈕點擊處理 (不使用任何 rerun，改用 Session State 即時渲染)
 if st.sidebar.button(t["save_btn"], key="save_record_btn"):
     if amount <= 0:
         st.sidebar.error(t["err_amount"])
     else:
         final_receipt = form_receipt.strip() if form_receipt.strip() else "-"
         
-        new_data = pd.DataFrame([{
-            "日期": date_input, "類型": "收入" if trans_type in ["收入", "Income"] else "支出", 
+        new_row = {
+            "日期": str(date_input), "類型": "收入" if trans_type in ["收入", "Income"] else "支出", 
             "大類項目": form_cat, "細分項目": form_sub, "金額": amount, "支付方式": payment_method, 
             "卡片細分": card_type, "收據號": final_receipt, "證明文件": saved_file_path, "備註": note
-        }])
+        }
+        new_data = pd.DataFrame([new_row])
         
-        # 儲存
-        if os.path.exists(DATA_FILE):
-            try:
-                current_df = pd.read_csv(DATA_FILE)
-                updated_df = pd.concat([current_df, new_data], ignore_index=True)
-            except:
-                updated_df = new_data
-        else:
-            updated_df = new_data
-            
-        updated_df.to_csv(DATA_FILE, index=False)
+        # 即時同步更新記憶庫
+        st.session_state.gym_df = pd.concat([st.session_state.gym_df, new_data], ignore_index=True)
+        # 背景寫入檔案
+        st.session_state.gym_df.to_csv(DATA_FILE, index=False)
         st.sidebar.success(t["success_save"])
-        
-        # 💡 原生安全重置：改變 version 版本號，讓左邊輸入表單完全乾淨重置，同時右邊報表自動刷新！
+        # 表單版本加一，觸發下一次表單自動清空
         st.session_state.form_version += 1
-        st.rerun()
 
-# --- 權限鎖薪資過濾 ---
+# --- 權限鎖過濾管理 ---
+df_active = st.session_state.gym_df.copy()
+df_active['日期'] = df_active['日期'].astype(str)
+
 if is_admin:
-    display_df = df.copy()
+    display_df = df_active.copy()
 else:
-    display_df = df[df["大類項目"] != "員工薪資 (Salary)"].copy()
+    display_df = df_active[df_active["大類項目"] != "員工薪資 (Salary)"].copy()
 
 # --- 主畫面報表分頁 ---
 tab1, tab2 = st.tabs([t["tab1"], t["tab2"]])
@@ -291,32 +283,44 @@ with tab1:
     st.markdown("---")
     
     st.subheader(t["history_title"])
-    if not display_df.empty:
-        grid_df = display_df.sort_values(by="日期", ascending=False).copy()
-        links = []
-        for path in grid_df["證明文件"]:
-            if path != "-" and os.path.exists(str(path)):
-                links.append(get_image_download_link(path, "📄 查看證明 (View)"))
+    # 🌟 建立歷史表格的動態畫布，確保刪除按鈕觸發時可以立刻重繪表格
+    table_placeholder = st.empty()
+    
+    if st.button(t["del_btn"], key="delete_last_btn"):
+        if not st.session_state.gym_df.empty:
+            # 即時從記憶庫移除最後一筆
+            st.session_state.gym_df = st.session_state.gym_df.drop(st.session_state.gym_df.index[-1])
+            # 背景同步寫入 CSV
+            st.session_state.gym_df.to_csv(DATA_FILE, index=False)
+            st.success(t["del_success"])
+            
+            # 重新計算過濾後的顯示數據
+            df_active = st.session_state.gym_df.copy()
+            df_active['日期'] = df_active['日期'].astype(str)
+            if is_admin:
+                display_df = df_active.copy()
             else:
-                links.append("-")
-        grid_df["證明文件連結"] = links
-        
-        st.write(grid_df[["日期", "類型", "大類項目", "細分項目", "金額", "支付方式", "卡片細分", "收據號", "備註", "證明文件連結"]].to_html(escape=False, index=False), unsafe_allow_html=True)
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button(t["del_btn"], key="delete_last_btn"):
-            if not df.empty:
-                df = df.drop(df.index[-1])
-                df.to_csv(DATA_FILE, index=False)
-                st.success(t["del_success"])
-                st.rerun()
-    else:
-        st.info(t["no_data"])
+                display_df = df_active[df_active["大類項目"] != "員工薪資 (Salary)"].copy()
+                
+    # 將數據繪製進動態畫布中
+    with table_placeholder.container():
+        if not display_df.empty:
+            grid_df = display_df.sort_values(by="日期", ascending=False).copy()
+            links = []
+            for path in grid_df["證明文件"]:
+                if path != "-" and os.path.exists(str(path)):
+                    links.append(get_image_download_link(path, "📄 查看證明 (View)"))
+                else:
+                    links.append("-")
+            grid_df["證明文件連結"] = links
+            st.write(grid_df[["日期", "類型", "大類項目", "細分項目", "金額", "支付方式", "卡片細分", "收據號", "備註", "證明文件連結"]].to_html(escape=False, index=False), unsafe_allow_html=True)
+        else:
+            st.info(t["no_data"])
 
 with tab2:
     st.subheader(t["report_title"])
     if not display_df.empty:
-        display_df['月份'] = display_df['日期'].apply(lambda x: x.strftime('%Y-%m') if hasattr(x, 'strftime') else str(x)[:7])
+        display_df['月份'] = display_df['日期'].apply(lambda x: str(x)[:7])
         all_months = sorted(list(display_df['月份'].unique()), reverse=True)
         selected_month = st.selectbox(t["select_month"], all_months, key="month_select")
         
