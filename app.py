@@ -8,7 +8,8 @@ import base64
 st.set_page_config(page_title="TheOneGym Financial System", layout="wide")
 
 # --- 核心檔案與資料夾路徑設定 ---
-DATA_FILE = "gym_records_v5.csv" 
+# 💡【終極修正】改成全新檔名 v6，逼迫雲端伺服器徹底拋棄所有舊語法快取！
+DATA_FILE = "gym_records_v6.csv" 
 UPLOAD_DIR = "uploaded_receipts"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
@@ -16,7 +17,7 @@ if not os.path.exists(UPLOAD_DIR):
 # 標準 10 大必備欄位
 standard_cols = ["日期", "類型", "大類項目", "細分項目", "金額", "支付方式", "卡片細分", "收據號", "證明文件", "備註"]
 
-# 🌟 核心記憶庫初始化
+# 核心記憶庫初始化
 if "gym_df" not in st.session_state:
     if os.path.exists(DATA_FILE):
         try:
@@ -31,11 +32,11 @@ if "gym_df" not in st.session_state:
     else:
         st.session_state.gym_df = pd.DataFrame(columns=standard_cols)
 
-# 用於記帳後自動清空左側欄位的版本計數器
+# 表單版本計數器
 if "form_version" not in st.session_state:
     st.session_state.form_version = 0
 
-# 🌟 安全的 On-Click 回呼函式，完全不使用 st.rerun()
+# 🌟 回呼函式機制（安全無 rerun）
 def save_record_on_click(date_val, type_val, cat_val, sub_val, amt_val, pay_val, card_val, receipt_val, uploaded_file_obj, note_val):
     if amt_val <= 0:
         st.session_state.form_error = True
@@ -57,16 +58,9 @@ def save_record_on_click(date_val, type_val, cat_val, sub_val, amt_val, pay_val,
     final_receipt = receipt_val.strip() if receipt_val.strip() else "-"
     
     new_row = {
-        "日期": str(date_val), 
-        "類型": "收入" if type_val in ["收入", "Income"] else "支出", 
-        "大類項目": cat_val, 
-        "細分項目": sub_val, 
-        "金額": float(amt_val), 
-        "支付方式": pay_val, 
-        "卡片細分": card_val, 
-        "收據號": final_receipt, 
-        "證明文件": saved_file_path, 
-        "備註": note_val
+        "日期": str(date_val), "類型": "收入" if type_val in ["收入", "Income"] else "支出", 
+        "大類項目": cat_val, "細分項目": sub_val, "金額": float(amt_val), "支付方式": pay_val, 
+        "卡片細分": card_val, "收據號": final_receipt, "證明文件": saved_file_path, "備註": note_val
     }
     new_df = pd.DataFrame([new_row])
     st.session_state.gym_df = pd.concat([st.session_state.gym_df, new_df], ignore_index=True)
@@ -102,7 +96,7 @@ st.sidebar.markdown("---")
 admin_password = st.sidebar.text_input("🔑 Admin Password / 管理員密碼", type="password")
 is_admin = (admin_password == "8888") 
 
-# --- 雙語翻譯字典 ---
+# --- 雙語字典 ---
 texts = {
     "繁體中文": {
         "title": "🏋️ TheOneGym 智能財務管理系統",
@@ -200,7 +194,7 @@ if "form_success" in st.session_state and st.session_state.form_success:
     st.sidebar.success(t["success_save"])
     st.session_state.form_success = False
 
-# --- 側邊欄輸入介面 ---
+# --- 輸入表單 ---
 v = st.session_state.form_version
 
 date_input = st.sidebar.date_input(t["date"], datetime.date.today(), key=f"date_{v}")
@@ -264,11 +258,10 @@ st.sidebar.button(
     args=(date_input, trans_type, form_cat, form_sub, amount, payment_method, card_type, form_receipt, uploaded_file, note)
 )
 
-# --- 權限鎖過濾管理 ---
+# --- 資料清洗與過濾 ---
 df_active = st.session_state.gym_df.copy()
 df_active['日期'] = df_active['日期'].astype(str)
 
-# 💡 安全防禦：清洗數據庫，強制移除非法空行、非數字金額或髒數據，杜絕長度報錯
 try:
     df_active['金額'] = pd.to_numeric(df_active['金額'], errors='coerce').fillna(0.0)
     df_active = df_active[df_active['大類項目'].notnull() & (df_active['大類項目'] != "") & (df_active['大類項目'] != "-")]
@@ -280,7 +273,7 @@ if is_admin:
 else:
     display_df = df_active[df_active["大類項目"] != "員工薪資 (Salary)"].copy()
 
-# --- 主畫面報表分頁 ---
+# --- 主畫面分頁 ---
 tab1, tab2 = st.tabs([t["tab1"], t["tab2"]])
 
 with tab1:
@@ -361,7 +354,6 @@ with tab2:
         st.write(f"### 📈 {selected_month} 各大核心業務收入佔比分析")
         inc_df = month_df[month_df['類型'] == "收入"]
         if not inc_df.empty:
-            # 💡【核心修正】採用更安全的計算模式，防止髒數據導致兩邊長度不一致而引發 ValueError
             try:
                 cat_summary = inc_df.groupby("大類項目")["金額"].sum().reset_index()
                 total_inc_sum = cat_summary["金額"].sum()
@@ -371,7 +363,7 @@ with tab2:
                     cat_summary['百分比 (Percentage)'] = "0.0%"
                 cat_summary.columns = ["業務核心項目 (Business Item)", "總收入 (RM)", "收入貢獻佔比"]
                 st.table(cat_summary)
-            except Exception as e:
+            except:
                 st.dataframe(inc_df)
         else:
             st.info("本月暫無收入分析數據。")
