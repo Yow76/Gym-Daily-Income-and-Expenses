@@ -8,7 +8,8 @@ import base64
 st.set_page_config(page_title="TheOneGym Financial System", layout="wide")
 
 # --- 核心檔案與資料夾路徑設定 ---
-DATA_FILE = "gym_records_v4.csv" 
+# 💡 升級全新乾淨資料庫，徹底避開所有舊隱藏快取與干擾
+DATA_FILE = "gym_records_v5.csv" 
 UPLOAD_DIR = "uploaded_receipts"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
@@ -16,7 +17,7 @@ if not os.path.exists(UPLOAD_DIR):
 # 標準 10 大必備欄位
 standard_cols = ["日期", "類型", "大類項目", "細分項目", "金額", "支付方式", "卡片細分", "收據號", "證明文件", "備註"]
 
-# 🌟 核心記憶庫初始化：確保全劇資料只在啟動時載入一次，後續由記憶體即時接管
+# 🌟 核心記憶庫初始化：確保全局資料只在啟動時載入一次，後續由記憶體即時接管
 if "gym_df" not in st.session_state:
     if os.path.exists(DATA_FILE):
         try:
@@ -31,27 +32,57 @@ if "gym_df" not in st.session_state:
     else:
         st.session_state.gym_df = pd.DataFrame(columns=standard_cols)
 
-# 用於記帳後自動清空欄位的版本計數器
+# 用於記帳後自動清空左側欄位的版本計數器
 if "form_version" not in st.session_state:
     st.session_state.form_version = 0
 
-# --- 按鈕觸發的後台處理函式（徹底解決黃色警告的核心） ---
-def save_record_callback(date_input, trans_type, form_cat, form_sub, amount, payment_method, card_type, form_receipt, saved_file_path, note):
-    final_receipt = form_receipt.strip() if form_receipt.strip() else "-"
-    new_row = {
-        "日期": str(date_input), "類型": "收入" if trans_type in ["收入", "Income"] else "支出", 
-        "大類項目": form_cat, "細分項目": form_sub, "金額": amount, "支付方式": payment_method, 
-        "卡片細分": card_type, "收據號": final_receipt, "證明文件": saved_file_path, "備註": note
-    }
-    new_data = pd.DataFrame([new_row])
-    st.session_state.gym_df = pd.concat([st.session_state.gym_df, new_data], ignore_index=True)
-    st.session_state.gym_df.to_csv(DATA_FILE, index=False)
-    st.session_state.form_version += 1
+# 🌟【全新核心機制】採用安全的 On-Click 回呼函式，完全不使用 st.rerun()，徹底消滅黃色警告
+def save_record_on_click(date_val, type_val, cat_val, sub_val, amt_val, pay_val, card_val, receipt_val, uploaded_file_obj, note_val):
+    if amt_val <= 0:
+        st.session_state.form_error = True
+        return
+    
+    st.session_state.form_error = False
+    saved_file_path = "-"
+    
+    # 處理支出憑證照片上傳
+    if uploaded_file_obj is not None:
+        try:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            saved_file_name = f"{timestamp}_{uploaded_file_obj.name}"
+            saved_file_path = os.path.join(UPLOAD_DIR, saved_file_name)
+            with open(saved_file_path, "wb") as f:
+                f.write(uploaded_file_obj.getbuffer())
+        except:
+            saved_file_path = "-"
 
-def delete_last_callback():
+    final_receipt = receipt_val.strip() if receipt_val.strip() else "-"
+    
+    new_row = {
+        "日期": str(date_val), 
+        "類型": "收入" if type_val in ["收入", "Income"] else "支出", 
+        "大類項目": cat_val, 
+        "細分項目": sub_val, 
+        "金額": float(amt_val), 
+        "支付方式": pay_val, 
+        "卡片細分": card_val, 
+        "收據號": final_receipt, 
+        "證明文件": saved_file_path, 
+        "備註": note_val
+    }
+    new_df = pd.DataFrame([new_row])
+    st.session_state.gym_df = pd.concat([st.session_state.gym_df, new_df], ignore_index=True)
+    st.session_state.gym_df.to_csv(DATA_FILE, index=False)
+    
+    # 自動重置表單，並舉起成功通知旗幟
+    st.session_state.form_version += 1
+    st.session_state.form_success = True
+
+def delete_last_on_click():
     if not st.session_state.gym_df.empty:
         st.session_state.gym_df = st.session_state.gym_df.drop(st.session_state.gym_df.index[-1])
         st.session_state.gym_df.to_csv(DATA_FILE, index=False)
+        st.session_state.del_success = True
 
 # --- 圖片與文件下載小工具 ---
 def get_image_download_link(file_path, text):
@@ -163,8 +194,15 @@ texts = {
 }
 
 t = texts[lang]
-st.title(t["title"])
-st.markdown("---")
+
+# 顯示狀態彈窗提示 (在最安全的地方渲染，防止警告)
+if "form_error" in st.session_state and st.session_state.form_error:
+    st.sidebar.error(t["err_amount"])
+    st.session_state.form_error = False
+
+if "form_success" in st.session_state and st.session_state.form_success:
+    st.sidebar.success(t["success_save"])
+    st.session_state.form_success = False
 
 # --- 側邊欄：數據輸入介面 ---
 st.sidebar.header(t["sidebar_header"])
@@ -173,7 +211,7 @@ v = st.session_state.form_version
 date_input = st.sidebar.date_input(t["date"], datetime.date.today(), key=f"date_{v}")
 trans_type = st.sidebar.selectbox(t["trans_type"], [t["income"], t["expense"]], key=f"type_{v}")
 
-form_cat, form_sub, form_receipt, saved_file_path = "", "", "-", "-"
+form_cat, form_sub, form_receipt, uploaded_file = "", "", "-", None
 
 if trans_type in ["收入", "Income"]:
     income_categories = ["Walk in", "Membership", "Personal Training", "Group Class", "Drinks / Merchandise", "Others"]
@@ -209,17 +247,7 @@ else:
     expense_categories = ["店租/水電 (Rent/Utilities)", "進貨成本 (Inventory)", "員工薪資 (Salary)", "其他支出 (Others)"]
     form_cat = st.sidebar.selectbox(t["cat_expense"], expense_categories, key=f"cat_exp_{v}")
     form_sub = st.sidebar.text_input(t["sub_item"], placeholder="例如：水電費 / 飲料進貨補貨", key=f"exp_sub_{v}")
-    
     uploaded_file = st.sidebar.file_uploader(t["upload_doc"], type=["png", "jpg", "jpeg", "pdf"], key=f"upload_{v}")
-    if uploaded_file is not None:
-        try:
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            saved_file_name = f"{timestamp}_{uploaded_file.name}"
-            saved_file_path = os.path.join(UPLOAD_DIR, saved_file_name)
-            with open(saved_file_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-        except:
-            saved_file_path = "-"
 
 amount = st.sidebar.number_input(t["amount"], min_value=0.0, step=1.0, format="%.2f", key=f"amt_{v}")
 pay_options = [t["cash"], t["qr"], t["transfer"], t["card"]]
@@ -234,12 +262,12 @@ if payment_method in ["信用卡/Debit卡", "Credit/Debit Card"]:
 
 note = st.sidebar.text_input(t["note"], key=f"note_{v}")
 
-# 🌟 採用安全的 on_click 回呼機制，檔案內絕對沒有任何一行 st.rerun()，永久告別黃色警告！
+# 🌟 透過 on_click 機制在頂層處理數據，全案 0 個 rerun 指令
 st.sidebar.button(
     t["save_btn"], 
     key="save_record_btn", 
-    on_click=save_record_callback, 
-    args=(date_input, trans_type, form_cat, form_sub, amount, payment_method, card_type, form_receipt, saved_file_path, note)
+    on_click=save_record_on_click, 
+    args=(date_input, trans_type, form_cat, form_sub, amount, payment_method, card_type, form_receipt, uploaded_file, note)
 )
 
 # --- 權限鎖薪資過濾 ---
@@ -288,8 +316,11 @@ with tab1:
     
     st.subheader(t["history_title"])
     
-    # 🌟 刪除按鈕也換成安全的 on_click 回呼機制
-    st.button(t["del_btn"], key="delete_last_btn", on_click=delete_last_callback)
+    if "del_success" in st.session_state and st.session_state.del_success:
+        st.success(t["del_success"])
+        st.session_state.del_success = False
+
+    st.button(t["del_btn"], key="delete_last_btn", on_click=delete_last_on_click)
                 
     if not display_df.empty:
         grid_df = display_df.sort_values(by="日期", ascending=False).copy()
