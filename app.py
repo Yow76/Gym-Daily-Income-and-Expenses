@@ -8,24 +8,20 @@ import base64
 st.set_page_config(page_title="TheOneGym Financial System", layout="wide")
 
 # --- 核心檔案與資料夾路徑設定 ---
-DATA_FILE = "financial_records.csv"
+# 💡【核心修正】更改檔案名稱，徹底避開雲端伺服器卡死的舊隱藏檔快取！
+DATA_FILE = "gym_records_v2.csv" 
 UPLOAD_DIR = "uploaded_receipts"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
-# 💡 究極防錯機制：不管有沒有舊檔案，強制建立乾乾淨淨的標準 10 大欄位
+# 標準的 10 大必備欄位
 standard_cols = ["日期", "類型", "大類項目", "細分項目", "金額", "支付方式", "卡片細分", "收據號", "證明文件", "備註"]
 
+# 載入現有數據
 if os.path.exists(DATA_FILE):
     try:
         df = pd.read_csv(DATA_FILE)
         df.columns = [str(c).strip() for c in df.columns]
-        rename_dict = {
-            "Card 細分": "卡片細分", "CardSubType": "卡片細分",
-            "項目": "細分項目", "Category": "大類項目", "Item": "細分項目",
-            "ReceiptNo": "收據號", "支付管道": "支付方式"
-        }
-        df = df.rename(columns=rename_dict)
     except:
         df = pd.DataFrame(columns=standard_cols)
 else:
@@ -51,11 +47,12 @@ def get_image_download_link(file_path, text):
             return f'<a href="data:application/octet-stream;base64,{b64}" download="{os.path.basename(file_path)}">{text}</a>'
     return "-"
 
-# --- 側邊欄：管理員密碼 (已移除多餘英文字) ---
+# --- 側邊欄：管理員密碼 ---
 st.sidebar.markdown("### 🌐 System Settings / 系統設定")
 lang = st.sidebar.radio("Language / 語言", ["繁體中文", "English"])
 
 st.sidebar.markdown("---")
+# 💡 依照要求：乾乾淨淨，只保留密碼輸入框，其餘多餘的 Staff Mode/Salary Hidden 提示字全部移除
 admin_password = st.sidebar.text_input("🔑 Admin Password / 管理員密碼", type="password")
 is_admin = (admin_password == "8888") 
 
@@ -99,7 +96,8 @@ texts = {
         "detail_col": "詳細分類",
         "amount_col": "收款總額 (RM)",
         "day_report": "🌅 今日營運結帳看板 (Closing Dashboard)",
-        "select_day": "選擇查看日期"
+        "select_day": "選擇查看日期",
+        "report_title": "📊 月度財務分析簡報"
     },
     "English": {
         "title": "🏋️ TheOneGym Intelligent Financial System",
@@ -139,7 +137,8 @@ texts = {
         "detail_col": "Category Detail",
         "amount_col": "Total Collected (RM)",
         "day_report": "🌅 Daily Closing Dashboard",
-        "select_day": "Select Date to Check"
+        "select_day": "Select Date to Check",
+        "report_title": "📊 Monthly Financial Analysis"
     }
 }
 
@@ -292,7 +291,7 @@ with tab2:
             cat_summary.columns = ["業務核心項目 (Business Item)", "總收入 (RM)", "收入貢獻佔比"]
             st.table(cat_summary)
         else:
-            st.info("本月暫無收入分析數據。")
+            st.info("本月暫無收入 analysis 數據。")
             
         st.markdown("---")
         
