@@ -259,3 +259,90 @@ with tab1:
     if not display_df.empty:
         all_days = sorted(list(display_df['日期'].unique()), reverse=True)
         selected_day = st.selectbox(t["select_day"], all_days, key="day_select")
+        day_df = display_df[display_df['日期'] == selected_day]
+        
+        day_income = day_df[day_df['類型'] == "收入"]['金額'].sum()
+        day_expense = day_df[day_df['類型'] == "支出"]['金額'].sum()
+        day_net = day_income - day_expense
+        
+        c1, c2, c3 = st.columns(3)
+        c1.metric("今日總收入 / Today Income", f"RM {day_income:,.2f}")
+        c2.metric("今日總支出 / Today Expense", f"RM {day_expense:,.2f}")
+        c3.metric("今日結餘結算 / Today Balance", f"RM {day_net:,.2f}")
+        
+        st.write("#### 💳 今日支付方式細分 (Today Payments Breakdown)")
+        day_inc_df = day_df[day_df['類型'] == "收入"]
+        if not day_inc_df.empty:
+            day_summary = day_inc_df.groupby(["支付方式", "卡片細分"])["金額"].sum().reset_index()
+            day_summary.columns = [t["pay_method"], t["detail_col"], t["amount_col"]]
+            st.table(day_summary)
+        else:
+            st.info("今日暫無收入款項。")
+            
+        day_csv = day_df.to_csv(index=False).encode('utf-8')
+        st.download_button(label=f"📥 {t['download_csv']} ({selected_day})", data=day_csv, file_name=f"Daily_Report_{selected_day}.csv", mime='text/csv')
+    else:
+        st.info(t["no_data"])
+        
+    st.markdown("---")
+    
+    st.subheader(t["history_title"])
+    
+    # 🌟 刪除按鈕也換成安全的 on_click 回呼機制
+    st.button(t["del_btn"], key="delete_last_btn", on_click=delete_last_callback)
+                
+    if not display_df.empty:
+        grid_df = display_df.sort_values(by="日期", ascending=False).copy()
+        links = []
+        for path in grid_df["證明文件"]:
+            if path != "-" and os.path.exists(str(path)):
+                links.append(get_image_download_link(path, "📄 查看證明 (View)"))
+            else:
+                links.append("-")
+        grid_df["證明文件連結"] = links
+        st.write(grid_df[["日期", "類型", "大類項目", "細分項目", "金額", "支付方式", "卡片細分", "收據號", "備註", "證明文件連結"]].to_html(escape=False, index=False), unsafe_allow_html=True)
+    else:
+        st.info(t["no_data"])
+
+with tab2:
+    st.subheader(t["report_title"])
+    if not display_df.empty:
+        display_df['月份'] = display_df['日期'].apply(lambda x: str(x)[:7])
+        all_months = sorted(list(display_df['月份'].unique()), reverse=True)
+        selected_month = st.selectbox(t["select_month"], all_months, key="month_select")
+        
+        month_df = display_df[display_df['月份'] == selected_month]
+        
+        m_inc = month_df[month_df['類型'] == "收入"]['金額'].sum()
+        m_exp = month_df[month_df['類型'] == "支出"]['金額'].sum()
+        m_prof = m_inc - m_exp
+        
+        col1, col2, col3 = st.columns(3)
+        col1.metric(t["m_income"], f"RM {m_inc:,.2f}")
+        col2.metric(t["m_expense"], f"RM {m_exp:,.2f}")
+        col3.metric(t["m_profit"], f"RM {m_prof:,.2f}")
+        
+        st.markdown("---")
+        
+        st.write(f"### 📈 {selected_month} 各大核心業務收入佔比分析")
+        inc_df = month_df[month_df['類型'] == "收入"]
+        if not inc_df.empty:
+            cat_summary = inc_df.groupby("大類項目")["金額"].sum().reset_index()
+            cat_summary['百分比 (Percentage)'] = (cat_summary['金額'] / cat_summary['金額'].sum() * 100).map("{:.1f}%".format)
+            cat_summary.columns = ["業務核心項目 (Business Item)", "總收入 (RM)", "收入貢獻佔比"]
+            st.table(cat_summary)
+        else:
+            st.info("本月暫無收入分析數據。")
+            
+        st.markdown("---")
+        
+        st.write(f"### 💳 {t['recon_title']} ({selected_month})")
+        if not inc_df.empty:
+            pay_summary = inc_df.groupby(["支付方式", "卡片細分"])["金額"].sum().reset_index()
+            pay_summary.columns = [t["pay_method"], t["detail_col"], t["amount_col"]]
+            st.table(pay_summary)
+            
+        month_csv = month_df.to_csv(index=False).encode('utf-8')
+        st.download_button(label=f"📥 {t['download_csv']} ({selected_month}月報)", data=month_csv, file_name=f"Monthly_Report_{selected_month}.csv", mime='text/csv')
+    else:
+        st.info(t["no_data"])
