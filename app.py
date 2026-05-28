@@ -1,4 +1,4 @@
-import streamlit as st
+ import streamlit as st
 import pandas as pd
 import datetime
 import os
@@ -13,14 +13,13 @@ UPLOAD_DIR = "uploaded_receipts"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
-# 載入數據（使用最強壯的防錯與欄位強制重建機制）
+# 💡 究極防錯機制：不管有沒有舊檔案，強制建立乾乾淨淨的標準 10 大欄位
+standard_cols = ["日期", "類型", "大類項目", "細分項目", "金額", "支付方式", "卡片細分", "收據號", "證明文件", "備註"]
+
 if os.path.exists(DATA_FILE):
     try:
         df = pd.read_csv(DATA_FILE)
-        # 強制將所有欄位名稱清洗乾淨，移除多餘空白
         df.columns = [str(c).strip() for c in df.columns]
-        
-        # 建立標準欄位對照字典
         rename_dict = {
             "Card 細分": "卡片細分", "CardSubType": "卡片細分",
             "項目": "細分項目", "Category": "大類項目", "Item": "細分項目",
@@ -28,20 +27,15 @@ if os.path.exists(DATA_FILE):
         }
         df = df.rename(columns=rename_dict)
     except:
-        df = pd.DataFrame()
+        df = pd.DataFrame(columns=standard_cols)
 else:
-    df = pd.DataFrame()
-
-# 💡【核心防錯】如果檔案完全空了、或欄位不對，強制補齊這 10 個標準欄位，徹底解決 KeyError
-standard_cols = ["日期", "類型", "大類項目", "細分項目", "金額", "支付方式", "卡片細分", "收據號", "證明文件", "備註"]
-if df.empty:
     df = pd.DataFrame(columns=standard_cols)
-else:
-    for col in standard_cols:
-        if col not in df.columns:
-            df[col] = "-"
 
-# 確保日期格式正確
+# 再次強制檢查，確保所有欄位百分之百存在
+for col in standard_cols:
+    if col not in df.columns:
+        df[col] = "-"
+
 df['日期'] = pd.to_datetime(df['日期']).dt.date
 
 # --- 圖片與文件下載小工具 ---
@@ -57,14 +51,13 @@ def get_image_download_link(file_path, text):
             return f'<a href="data:application/octet-stream;base64,{b64}" download="{os.path.basename(file_path)}">{text}</a>'
     return "-"
 
-# --- 側邊欄：全局設定 (語言與密碼) ---
+# --- 側邊欄：管理員密碼 (已移除多餘英文字) ---
 st.sidebar.markdown("### 🌐 System Settings / 系統設定")
 lang = st.sidebar.radio("Language / 語言", ["繁體中文", "English"])
 
 st.sidebar.markdown("---")
-# 💡 依照您的要求：只保留簡單的密碼輸入框進入 Admin 模式
 admin_password = st.sidebar.text_input("🔑 Admin Password / 管理員密碼", type="password")
-is_admin = (admin_password == "8888") # 預設密碼 8888
+is_admin = (admin_password == "8888") 
 
 # --- 語言字典設定 ---
 texts = {
@@ -208,7 +201,7 @@ if st.sidebar.button(t["save_btn"]):
         st.sidebar.success(t["success_save"])
         st.rerun()
 
-# --- 權限鎖過濾管理（隱藏薪資項目） ---
+# --- 權限鎖過濾管理 ---
 if is_admin:
     display_df = df.copy()
 else:
