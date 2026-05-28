@@ -8,13 +8,17 @@ import base64
 st.set_page_config(page_title="TheOneGym Financial System", layout="wide")
 
 # --- 核心檔案與資料夾路徑設定 ---
-DATA_FILE = "gym_records_v2.csv" 
+DATA_FILE = "gym_records_v3.csv" # 升級新資料庫，一勞永逸避開任何舊隱藏快取
 UPLOAD_DIR = "uploaded_receipts"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
 # 標準 10 大欄位
 standard_cols = ["日期", "類型", "大類項目", "細分項目", "金額", "支付方式", "卡片細分", "收據號", "證明文件", "備註"]
+
+# 初始化一個用來控制表單刷新的計數器
+if "form_version" not in st.session_state:
+    st.session_state.form_version = 0
 
 # 載入現有數據
 if os.path.exists(DATA_FILE):
@@ -146,20 +150,22 @@ t = texts[lang]
 st.title(t["title"])
 st.markdown("---")
 
-# --- 側邊欄：數據輸入介面 ---
+# --- 側邊欄：數據輸入介面 (加上動態 key 綁定防警告) ---
 st.sidebar.header(t["sidebar_header"])
-date_input = st.sidebar.date_input(t["date"], datetime.date.today())
-trans_type = st.sidebar.selectbox(t["trans_type"], [t["income"], t["expense"]])
+v = st.session_state.form_version
+
+date_input = st.sidebar.date_input(t["date"], datetime.date.today(), key=f"date_{v}")
+trans_type = st.sidebar.selectbox(t["trans_type"], [t["income"], t["expense"]], key=f"type_{v}")
 
 form_cat, form_sub, form_receipt, saved_file_path = "", "", "-", "-"
 
 if trans_type in ["收入", "Income"]:
     income_categories = ["Walk in", "Membership", "Personal Training", "Group Class", "Drinks / Merchandise", "Others"]
-    form_cat = st.sidebar.selectbox(t["cat_income"], income_categories)
+    form_cat = st.sidebar.selectbox(t["cat_income"], income_categories, key=f"cat_inc_{v}")
     
     if form_cat == "Walk in":
         walk_in_options = ["Walk in Gym", "Walk in Group Class", "Seven Day Pass"]
-        form_sub = st.sidebar.selectbox(t["sub_item"], walk_in_options)
+        form_sub = st.sidebar.selectbox(t["sub_item"], walk_in_options, key=f"sub_walk_{v}")
         
     elif form_cat == "Membership":
         membership_options = [
@@ -168,32 +174,32 @@ if trans_type in ["收入", "Income"]:
             "Fitness Renew 12M (Promo)", "2M PROMO", "Fitness Unlimited Group Class 168", 
             "Fitness Unlimited Group Class Promo 138", "Unlimited Group Class Package 110", "Others/Other Promo"
         ]
-        form_sub = st.sidebar.selectbox(t["sub_item"], membership_options)
+        form_sub = st.sidebar.selectbox(t["sub_item"], membership_options, key=f"sub_mem_{v}")
         
     elif form_cat == "Personal Training":
-        pt_type = st.sidebar.selectbox(t["pt_type"], ["Inhouse Trainer", "Freelance Trainer"])
-        sessions = st.sidebar.text_input(t["manual_sessions"], placeholder="例如: 10堂課 / 15堂課")
+        pt_type = st.sidebar.selectbox(t["pt_type"], ["Inhouse Trainer", "Freelance Trainer"], key=f"pt_type_{v}")
+        sessions = st.sidebar.text_input(t["manual_sessions"], placeholder="例如: 10堂課 / 15堂課", key=f"pt_sess_{v}")
         form_sub = f"{pt_type} ({sessions})"
         
     elif form_cat == "Group Class":
-        gc_sessions = st.sidebar.text_input(t["manual_sessions"], placeholder="例如: Zumba 5堂課 / Yoga 12堂課")
+        gc_sessions = st.sidebar.text_input(t["manual_sessions"], placeholder="例如: Zumba 5堂課 / Yoga 12堂課", key=f"gc_sess_{v}")
         form_sub = gc_sessions if gc_sessions.strip() else "Group Class"
         
     elif form_cat == "Drinks / Merchandise":
         drinks_options = ["Mineral water 1.5L", "Mineral water 500ml", "100 號 (100 Plus)", "Vida", "Protein (乳清蛋白)", "Others"]
-        form_sub = st.sidebar.selectbox(t["sub_item"], drinks_options)
+        form_sub = st.sidebar.selectbox(t["sub_item"], drinks_options, key=f"drinks_{v}")
         
     elif form_cat == "Others":
         form_sub = "-"
         
-    form_receipt = st.sidebar.text_input(t["receipt_no"], value="-")
+    form_receipt = st.sidebar.text_input(t["receipt_no"], value="-", key=f"receipt_{v}")
 
 else:
     expense_categories = ["店租/水電 (Rent/Utilities)", "進貨成本 (Inventory)", "員工薪資 (Salary)", "其他支出 (Others)"]
-    form_cat = st.sidebar.selectbox(t["cat_expense"], expense_categories)
-    form_sub = st.sidebar.text_input(t["sub_item"], placeholder="例如：水電費 / 飲料進貨補貨")
+    form_cat = st.sidebar.selectbox(t["cat_expense"], expense_categories, key=f"cat_exp_{v}")
+    form_sub = st.sidebar.text_input(t["sub_item"], placeholder="例如：水電費 / 飲料進貨補貨", key=f"exp_sub_{v}")
     
-    uploaded_file = st.sidebar.file_uploader(t["upload_doc"], type=["png", "jpg", "jpeg", "pdf"])
+    uploaded_file = st.sidebar.file_uploader(t["upload_doc"], type=["png", "jpg", "jpeg", "pdf"], key=f"upload_{v}")
     if uploaded_file is not None:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         saved_file_name = f"{timestamp}_{uploaded_file.name}"
@@ -201,20 +207,20 @@ else:
         with open(saved_file_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
 
-amount = st.sidebar.number_input(t["amount"], min_value=0.0, step=1.0, format="%.2f")
+amount = st.sidebar.number_input(t["amount"], min_value=0.0, step=1.0, format="%.2f", key=f"amt_{v}")
 pay_options = [t["cash"], t["qr"], t["transfer"], t["card"]]
-payment_method = st.sidebar.selectbox(t["pay_method"], pay_options)
+payment_method = st.sidebar.selectbox(t["pay_method"], pay_options, key=f"pay_{v}")
 
 card_type = "-"
 if payment_method in ["信用卡/Debit卡", "Credit/Debit Card"]:
     card_type = st.sidebar.selectbox(t["card_sub"], [
         "Autodebit (Credit Card)", "Visa (Maybank)", "Mastercard (Public Bank)", 
         "Visa (CIMB)", "Debit Card", "Others"
-    ])
+    ], key=f"card_sub_{v}")
 
-note = st.sidebar.text_input(t["note"])
+note = st.sidebar.text_input(t["note"], key=f"note_{v}")
 
-if st.sidebar.button(t["save_btn"]):
+if st.sidebar.button(t["save_btn"], key="save_record_btn"):
     if amount <= 0:
         st.sidebar.error(t["err_amount"])
     else:
@@ -226,14 +232,21 @@ if st.sidebar.button(t["save_btn"]):
             "卡片細分": card_type, "收據號": final_receipt, "證明文件": saved_file_path, "備註": note
         }])
         
+        # 儲存
         if os.path.exists(DATA_FILE):
-            current_df = pd.read_csv(DATA_FILE)
-            updated_df = pd.concat([current_df, new_data], ignore_index=True)
+            try:
+                current_df = pd.read_csv(DATA_FILE)
+                updated_df = pd.concat([current_df, new_data], ignore_index=True)
+            except:
+                updated_df = new_data
         else:
             updated_df = new_data
             
         updated_df.to_csv(DATA_FILE, index=False)
         st.sidebar.success(t["success_save"])
+        
+        # 💡 原生安全重置：改變 version 版本號，讓左邊輸入表單完全乾淨重置，同時右邊報表自動刷新！
+        st.session_state.form_version += 1
         st.rerun()
 
 # --- 權限鎖薪資過濾 ---
@@ -291,11 +304,12 @@ with tab1:
         st.write(grid_df[["日期", "類型", "大類項目", "細分項目", "金額", "支付方式", "卡片細分", "收據號", "備註", "證明文件連結"]].to_html(escape=False, index=False), unsafe_allow_html=True)
         
         st.markdown("<br>", unsafe_allow_html=True)
-        if st.button(t["del_btn"]):
-            df = df.drop(df.index[-1])
-            df.to_csv(DATA_FILE, index=False)
-            st.success(t["del_success"])
-            st.rerun()
+        if st.button(t["del_btn"], key="delete_last_btn"):
+            if not df.empty:
+                df = df.drop(df.index[-1])
+                df.to_csv(DATA_FILE, index=False)
+                st.success(t["del_success"])
+                st.rerun()
     else:
         st.info(t["no_data"])
 
