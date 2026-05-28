@@ -8,13 +8,12 @@ import base64
 st.set_page_config(page_title="TheOneGym Financial System", layout="wide")
 
 # --- 核心檔案與資料夾路徑設定 ---
-# 💡【核心修正】更改檔案名稱，徹底避開雲端伺服器卡死的舊隱藏檔快取！
 DATA_FILE = "gym_records_v2.csv" 
 UPLOAD_DIR = "uploaded_receipts"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
-# 標準的 10 大必備欄位
+# 標準 10 大欄位
 standard_cols = ["日期", "類型", "大類項目", "細分項目", "金額", "支付方式", "卡片細分", "收據號", "證明文件", "備註"]
 
 # 載入現有數據
@@ -27,7 +26,7 @@ if os.path.exists(DATA_FILE):
 else:
     df = pd.DataFrame(columns=standard_cols)
 
-# 再次強制檢查，確保所有欄位百分之百存在
+# 強制欄位檢查
 for col in standard_cols:
     if col not in df.columns:
         df[col] = "-"
@@ -47,16 +46,15 @@ def get_image_download_link(file_path, text):
             return f'<a href="data:application/octet-stream;base64,{b64}" download="{os.path.basename(file_path)}">{text}</a>'
     return "-"
 
-# --- 側邊欄：管理員密碼 ---
+# --- 側邊欄：全局設定 (語言與管理員密碼) ---
 st.sidebar.markdown("### 🌐 System Settings / 系統設定")
 lang = st.sidebar.radio("Language / 語言", ["繁體中文", "English"])
 
 st.sidebar.markdown("---")
-# 💡 依照要求：乾乾淨淨，只保留密碼輸入框，其餘多餘的 Staff Mode/Salary Hidden 提示字全部移除
 admin_password = st.sidebar.text_input("🔑 Admin Password / 管理員密碼", type="password")
-is_admin = (admin_password == "8888") 
+is_admin = (admin_password == "8888") # 預設密碼 8888
 
-# --- 語言字典設定 ---
+# --- 雙語翻譯字典 ---
 texts = {
     "繁體中文": {
         "title": "🏋️ TheOneGym 智能財務管理系統",
@@ -67,8 +65,10 @@ texts = {
         "expense": "支出",
         "cat_income": "收入大類項目",
         "cat_expense": "支出項目",
-        "sub_item": "細分說明 (如：會員卡種/PT教練/飲料)",
-        "receipt_no": "收據號 (Receipt No.) *必填",
+        "sub_item": "項目細分選擇",
+        "pt_type": "教練類型 (Trainer Type)",
+        "manual_sessions": "手動填寫堂數/課時 (Sessions)",
+        "receipt_no": "收據號 (Receipt No.) [選填]",
         "upload_doc": "上傳支出證明文件/照片",
         "amount": "金額 (RM)",
         "pay_method": "支付方式",
@@ -76,7 +76,6 @@ texts = {
         "note": "備註 (選填)",
         "save_btn": "💾 儲存此筆紀錄",
         "err_amount": "請輸入大於 0 的金額！",
-        "err_receipt": "請填寫收據號！",
         "success_save": "紀錄已成功儲存！",
         "tab1": "📋 當日 Closing 與明細",
         "tab2": "📈 月度財務統計與分析",
@@ -108,8 +107,10 @@ texts = {
         "expense": "Expense",
         "cat_income": "Income Category",
         "cat_expense": "Expense Item",
-        "sub_item": "Sub-item Detail (e.g. Card Type / Coach Name)",
-        "receipt_no": "Receipt No. *Required",
+        "sub_item": "Sub-item Category",
+        "pt_type": "Trainer Type",
+        "manual_sessions": "Enter Number of Sessions",
+        "receipt_no": "Receipt No. [Optional]",
         "upload_doc": "Upload Receipt Photo/Document",
         "amount": "Amount (RM)",
         "pay_method": "Payment Method",
@@ -117,7 +118,6 @@ texts = {
         "note": "Notes (Optional)",
         "save_btn": "💾 Save Record",
         "err_amount": "Please enter an amount greater than 0!",
-        "err_receipt": "Receipt No. is required!",
         "success_save": "Record saved successfully!",
         "tab1": "📋 Daily Closing & Details",
         "tab2": "📈 Monthly Report & Analysis",
@@ -154,15 +154,49 @@ trans_type = st.sidebar.selectbox(t["trans_type"], [t["income"], t["expense"]])
 form_cat, form_sub, form_receipt, saved_file_path = "", "", "-", "-"
 
 if trans_type in ["收入", "Income"]:
+    # 6 大核心收入主選項
     income_categories = ["Walk in", "Membership", "Personal Training", "Group Class", "Drinks / Merchandise", "Others"]
     form_cat = st.sidebar.selectbox(t["cat_income"], income_categories)
-    form_sub = st.sidebar.text_input(t["sub_item"], placeholder="例如：Fitness Renew / Coach Ernest")
-    form_receipt = st.sidebar.text_input(t["receipt_no"])
+    
+    # 根據不同主選項，展開你指定的精準次選項
+    if form_cat == "Walk in":
+        walk_in_options = ["Walk in Gym", "Walk in Group Class", "Seven Day Pass"]
+        form_sub = st.sidebar.selectbox(t["sub_item"], walk_in_options)
+        
+    elif form_cat == "Membership":
+        membership_options = [
+            "Fitness Renew (NEW)", "Fitness Renew (OLD)", "Fitness Renew 3M", "Fitness Renew 6M",
+            "Fitness(Renew)(AB)", "1M NEWJOIN PROMO", "Fitness Student (New)", "Fitness Student (Renew)", 
+            "Fitness Renew 12M (Promo)", "2M PROMO", "Fitness Unlimited Group Class 168", 
+            "Fitness Unlimited Group Class Promo 138", "Unlimited Group Class Package 110", "Others/Other Promo"
+        ]
+        form_sub = st.sidebar.selectbox(t["sub_item"], membership_options)
+        
+    elif form_cat == "Personal Training":
+        pt_type = st.sidebar.selectbox(t["pt_type"], ["Inhouse Trainer", "Freelance Trainer"])
+        sessions = st.sidebar.text_input(t["manual_sessions"], placeholder="例如: 10堂課 / 15堂課")
+        form_sub = f"{pt_type} ({sessions})"
+        
+    elif form_cat == "Group Class":
+        gc_sessions = st.sidebar.text_input(t["manual_sessions"], placeholder="例如: Zumba 5堂課 / Yoga 12堂課")
+        form_sub = gc_sessions if gc_sessions.strip() else "Group Class"
+        
+    elif form_cat == "Drinks / Merchandise":
+        drinks_options = ["水 1.5L", "水 500ml", "100 號 (100 Plus)", "Vida", "Protein (乳清蛋白)", "Others"]
+        form_sub = st.sidebar.selectbox(t["sub_item"], drinks_options)
+        
+    elif form_cat == "Others":
+        form_sub = "-" # Others 不需要次選項
+        
+    form_receipt = st.sidebar.text_input(t["receipt_no"], value="-") # 收據號改為選填
+
 else:
+    # 支出大類
     expense_categories = ["店租/水電 (Rent/Utilities)", "進貨成本 (Inventory)", "員工薪資 (Salary)", "其他支出 (Others)"]
     form_cat = st.sidebar.selectbox(t["cat_expense"], expense_categories)
-    form_sub = st.sidebar.text_input(t["sub_item"], placeholder="例如：May 水電費 / 買水進貨")
+    form_sub = st.sidebar.text_input(t["sub_item"], placeholder="例如：水電費 / 飲料進貨補貨")
     
+    # 支出憑證上傳
     uploaded_file = st.sidebar.file_uploader(t["upload_doc"], type=["png", "jpg", "jpeg", "pdf"])
     if uploaded_file is not None:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -184,29 +218,31 @@ if payment_method in ["信用卡/Debit卡", "Credit/Debit Card"]:
 
 note = st.sidebar.text_input(t["note"])
 
+# 儲存邏輯
 if st.sidebar.button(t["save_btn"]):
     if amount <= 0:
         st.sidebar.error(t["err_amount"])
-    elif trans_type in ["收入", "Income"] and not form_receipt.strip():
-        st.sidebar.error(t["err_receipt"])
     else:
+        # 如果選填收據號沒寫，自動填上 "-"
+        final_receipt = form_receipt.strip() if form_receipt.strip() else "-"
+        
         new_data = pd.DataFrame([{
             "日期": date_input, "類型": "收入" if trans_type in ["收入", "Income"] else "支出", 
             "大類項目": form_cat, "細分項目": form_sub, "金額": amount, "支付方式": payment_method, 
-            "卡片細分": card_type, "收據號": form_receipt, "證明文件": saved_file_path, "備註": note
+            "卡片細分": card_type, "收據號": final_receipt, "證明文件": saved_file_path, "備註": note
         }])
         df = pd.concat([df, new_data], ignore_index=True)
         df.to_csv(DATA_FILE, index=False)
         st.sidebar.success(t["success_save"])
         st.rerun()
 
-# --- 權限鎖過濾管理 ---
+# --- 權限鎖薪資過濾 ---
 if is_admin:
     display_df = df.copy()
 else:
     display_df = df[df["大類項目"] != "員工薪資 (Salary)"].copy()
 
-# --- 主畫面分頁 ---
+# --- 主畫面報表分頁 ---
 tab1, tab2 = st.tabs([t["tab1"], t["tab2"]])
 
 with tab1:
@@ -291,7 +327,7 @@ with tab2:
             cat_summary.columns = ["業務核心項目 (Business Item)", "總收入 (RM)", "收入貢獻佔比"]
             st.table(cat_summary)
         else:
-            st.info("本月暫無收入 analysis 數據。")
+            st.info("本月暫無收入分析數據。")
             
         st.markdown("---")
         
