@@ -8,7 +8,7 @@ import base64
 st.set_page_config(page_title="TheOneGym Financial System", layout="wide")
 
 # --- 核心檔案與資料夾路徑設定 ---
-DATA_FILE = "gym_records_v4.csv" # 升級全新乾淨資料庫，徹底避開所有舊隱藏快取
+DATA_FILE = "gym_records_v4.csv" 
 UPLOAD_DIR = "uploaded_receipts"
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
@@ -35,6 +35,24 @@ if "gym_df" not in st.session_state:
 if "form_version" not in st.session_state:
     st.session_state.form_version = 0
 
+# --- 按鈕觸發的後台處理函式（徹底解決黃色警告的核心） ---
+def save_record_callback(date_input, trans_type, form_cat, form_sub, amount, payment_method, card_type, form_receipt, saved_file_path, note):
+    final_receipt = form_receipt.strip() if form_receipt.strip() else "-"
+    new_row = {
+        "日期": str(date_input), "類型": "收入" if trans_type in ["收入", "Income"] else "支出", 
+        "大類項目": form_cat, "細分項目": form_sub, "金額": amount, "支付方式": payment_method, 
+        "卡片細分": card_type, "收據號": final_receipt, "證明文件": saved_file_path, "備註": note
+    }
+    new_data = pd.DataFrame([new_row])
+    st.session_state.gym_df = pd.concat([st.session_state.gym_df, new_data], ignore_index=True)
+    st.session_state.gym_df.to_csv(DATA_FILE, index=False)
+    st.session_state.form_version += 1
+
+def delete_last_callback():
+    if not st.session_state.gym_df.empty:
+        st.session_state.gym_df = st.session_state.gym_df.drop(st.session_state.gym_df.index[-1])
+        st.session_state.gym_df.to_csv(DATA_FILE, index=False)
+
 # --- 圖片與文件下載小工具 ---
 def get_image_download_link(file_path, text):
     if os.path.exists(file_path):
@@ -54,7 +72,7 @@ lang = st.sidebar.radio("Language / 語言", ["繁體中文", "English"])
 
 st.sidebar.markdown("---")
 admin_password = st.sidebar.text_input("🔑 Admin Password / 管理員密碼", type="password")
-is_admin = (admin_password == "8888") # 預設管理員密碼為 8888
+is_admin = (admin_password == "8888") 
 
 # --- 雙語翻譯字典 ---
 texts = {
@@ -216,29 +234,15 @@ if payment_method in ["信用卡/Debit卡", "Credit/Debit Card"]:
 
 note = st.sidebar.text_input(t["note"], key=f"note_{v}")
 
-# 儲存按鈕點擊處理 (不使用任何 rerun，改用 Session State 即時渲染)
-if st.sidebar.button(t["save_btn"], key="save_record_btn"):
-    if amount <= 0:
-        st.sidebar.error(t["err_amount"])
-    else:
-        final_receipt = form_receipt.strip() if form_receipt.strip() else "-"
-        
-        new_row = {
-            "日期": str(date_input), "類型": "收入" if trans_type in ["收入", "Income"] else "支出", 
-            "大類項目": form_cat, "細分項目": form_sub, "金額": amount, "支付方式": payment_method, 
-            "卡片細分": card_type, "收據號": final_receipt, "證明文件": saved_file_path, "備註": note
-        }
-        new_data = pd.DataFrame([new_row])
-        
-        # 即時同步更新記憶庫
-        st.session_state.gym_df = pd.concat([st.session_state.gym_df, new_data], ignore_index=True)
-        # 背景寫入檔案
-        st.session_state.gym_df.to_csv(DATA_FILE, index=False)
-        st.sidebar.success(t["success_save"])
-        # 表單版本加一，觸發下一次表單自動清空
-        st.session_state.form_version += 1
+# 🌟 採用安全的 on_click 回呼機制，檔案內絕對沒有任何一行 st.rerun()，永久告別黃色警告！
+st.sidebar.button(
+    t["save_btn"], 
+    key="save_record_btn", 
+    on_click=save_record_callback, 
+    args=(date_input, trans_type, form_cat, form_sub, amount, payment_method, card_type, form_receipt, saved_file_path, note)
+)
 
-# --- 權限鎖過濾管理 ---
+# --- 權限鎖薪資過濾 ---
 df_active = st.session_state.gym_df.copy()
 df_active['日期'] = df_active['日期'].astype(str)
 
@@ -255,107 +259,3 @@ with tab1:
     if not display_df.empty:
         all_days = sorted(list(display_df['日期'].unique()), reverse=True)
         selected_day = st.selectbox(t["select_day"], all_days, key="day_select")
-        day_df = display_df[display_df['日期'] == selected_day]
-        
-        day_income = day_df[day_df['類型'] == "收入"]['金額'].sum()
-        day_expense = day_df[day_df['類型'] == "支出"]['金額'].sum()
-        day_net = day_income - day_expense
-        
-        c1, c2, c3 = st.columns(3)
-        c1.metric("今日總收入 / Today Income", f"RM {day_income:,.2f}")
-        c2.metric("今日總支出 / Today Expense", f"RM {day_expense:,.2f}")
-        c3.metric("今日結餘結算 / Today Balance", f"RM {day_net:,.2f}")
-        
-        st.write("#### 💳 今日支付方式細分 (Today Payments Breakdown)")
-        day_inc_df = day_df[day_df['類型'] == "收入"]
-        if not day_inc_df.empty:
-            day_summary = day_inc_df.groupby(["支付方式", "卡片細分"])["金額"].sum().reset_index()
-            day_summary.columns = [t["pay_method"], t["detail_col"], t["amount_col"]]
-            st.table(day_summary)
-        else:
-            st.info("今日暫無收入款項。")
-            
-        day_csv = day_df.to_csv(index=False).encode('utf-8')
-        st.download_button(label=f"📥 {t['download_csv']} ({selected_day})", data=day_csv, file_name=f"Daily_Report_{selected_day}.csv", mime='text/csv')
-    else:
-        st.info(t["no_data"])
-        
-    st.markdown("---")
-    
-    st.subheader(t["history_title"])
-    # 🌟 建立歷史表格的動態畫布，確保刪除按鈕觸發時可以立刻重繪表格
-    table_placeholder = st.empty()
-    
-    if st.button(t["del_btn"], key="delete_last_btn"):
-        if not st.session_state.gym_df.empty:
-            # 即時從記憶庫移除最後一筆
-            st.session_state.gym_df = st.session_state.gym_df.drop(st.session_state.gym_df.index[-1])
-            # 背景同步寫入 CSV
-            st.session_state.gym_df.to_csv(DATA_FILE, index=False)
-            st.success(t["del_success"])
-            
-            # 重新計算過濾後的顯示數據
-            df_active = st.session_state.gym_df.copy()
-            df_active['日期'] = df_active['日期'].astype(str)
-            if is_admin:
-                display_df = df_active.copy()
-            else:
-                display_df = df_active[df_active["大類項目"] != "員工薪資 (Salary)"].copy()
-                
-    # 將數據繪製進動態畫布中
-    with table_placeholder.container():
-        if not display_df.empty:
-            grid_df = display_df.sort_values(by="日期", ascending=False).copy()
-            links = []
-            for path in grid_df["證明文件"]:
-                if path != "-" and os.path.exists(str(path)):
-                    links.append(get_image_download_link(path, "📄 查看證明 (View)"))
-                else:
-                    links.append("-")
-            grid_df["證明文件連結"] = links
-            st.write(grid_df[["日期", "類型", "大類項目", "細分項目", "金額", "支付方式", "卡片細分", "收據號", "備註", "證明文件連結"]].to_html(escape=False, index=False), unsafe_allow_html=True)
-        else:
-            st.info(t["no_data"])
-
-with tab2:
-    st.subheader(t["report_title"])
-    if not display_df.empty:
-        display_df['月份'] = display_df['日期'].apply(lambda x: str(x)[:7])
-        all_months = sorted(list(display_df['月份'].unique()), reverse=True)
-        selected_month = st.selectbox(t["select_month"], all_months, key="month_select")
-        
-        month_df = display_df[display_df['月份'] == selected_month]
-        
-        m_inc = month_df[month_df['類型'] == "收入"]['金額'].sum()
-        m_exp = month_df[month_df['類型'] == "支出"]['金額'].sum()
-        m_prof = m_inc - m_exp
-        
-        col1, col2, col3 = st.columns(3)
-        col1.metric(t["m_income"], f"RM {m_inc:,.2f}")
-        col2.metric(t["m_expense"], f"RM {m_exp:,.2f}")
-        col3.metric(t["m_profit"], f"RM {m_prof:,.2f}")
-        
-        st.markdown("---")
-        
-        st.write(f"### 📈 {selected_month} 各大核心業務收入佔比分析")
-        inc_df = month_df[month_df['類型'] == "收入"]
-        if not inc_df.empty:
-            cat_summary = inc_df.groupby("大類項目")["金額"].sum().reset_index()
-            cat_summary['百分比 (Percentage)'] = (cat_summary['金額'] / cat_summary['金額'].sum() * 100).map("{:.1f}%".format)
-            cat_summary.columns = ["業務核心項目 (Business Item)", "總收入 (RM)", "收入貢獻佔比"]
-            st.table(cat_summary)
-        else:
-            st.info("本月暫無收入分析數據。")
-            
-        st.markdown("---")
-        
-        st.write(f"### 💳 {t['recon_title']} ({selected_month})")
-        if not inc_df.empty:
-            pay_summary = inc_df.groupby(["支付方式", "卡片細分"])["金額"].sum().reset_index()
-            pay_summary.columns = [t["pay_method"], t["detail_col"], t["amount_col"]]
-            st.table(pay_summary)
-            
-        month_csv = month_df.to_csv(index=False).encode('utf-8')
-        st.download_button(label=f"📥 {t['download_csv']} ({selected_month}月報)", data=month_csv, file_name=f"Monthly_Report_{selected_month}.csv", mime='text/csv')
-    else:
-        st.info(t["no_data"])
