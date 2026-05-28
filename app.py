@@ -154,11 +154,9 @@ trans_type = st.sidebar.selectbox(t["trans_type"], [t["income"], t["expense"]])
 form_cat, form_sub, form_receipt, saved_file_path = "", "", "-", "-"
 
 if trans_type in ["收入", "Income"]:
-    # 6 大核心收入主選項
     income_categories = ["Walk in", "Membership", "Personal Training", "Group Class", "Drinks / Merchandise", "Others"]
     form_cat = st.sidebar.selectbox(t["cat_income"], income_categories)
     
-    # 根據不同主選項，展開你指定的精準次選項
     if form_cat == "Walk in":
         walk_in_options = ["Walk in Gym", "Walk in Group Class", "Seven Day Pass"]
         form_sub = st.sidebar.selectbox(t["sub_item"], walk_in_options)
@@ -186,17 +184,15 @@ if trans_type in ["收入", "Income"]:
         form_sub = st.sidebar.selectbox(t["sub_item"], drinks_options)
         
     elif form_cat == "Others":
-        form_sub = "-" # Others 不需要次選項
+        form_sub = "-"
         
-    form_receipt = st.sidebar.text_input(t["receipt_no"], value="-") # 收據號改為選填
+    form_receipt = st.sidebar.text_input(t["receipt_no"], value="-")
 
 else:
-    # 支出大類
     expense_categories = ["店租/水電 (Rent/Utilities)", "進貨成本 (Inventory)", "員工薪資 (Salary)", "其他支出 (Others)"]
     form_cat = st.sidebar.selectbox(t["cat_expense"], expense_categories)
     form_sub = st.sidebar.text_input(t["sub_item"], placeholder="例如：水電費 / 飲料進貨補貨")
     
-    # 支出憑證上傳
     uploaded_file = st.sidebar.file_uploader(t["upload_doc"], type=["png", "jpg", "jpeg", "pdf"])
     if uploaded_file is not None:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -218,12 +214,11 @@ if payment_method in ["信用卡/Debit卡", "Credit/Debit Card"]:
 
 note = st.sidebar.text_input(t["note"])
 
-# 儲存邏輯
+# 💡【優化點】利用 Streamlit 最穩定的機制來觸發重整，解決舊版 rerun 引起的 Exception
 if st.sidebar.button(t["save_btn"]):
     if amount <= 0:
         st.sidebar.error(t["err_amount"])
     else:
-        # 如果選填收據號沒寫，自動填上 "-"
         final_receipt = form_receipt.strip() if form_receipt.strip() else "-"
         
         new_data = pd.DataFrame([{
@@ -231,10 +226,19 @@ if st.sidebar.button(t["save_btn"]):
             "大類項目": form_cat, "細分項目": form_sub, "金額": amount, "支付方式": payment_method, 
             "卡片細分": card_type, "收據號": final_receipt, "證明文件": saved_file_path, "備註": note
         }])
-        df = pd.concat([df, new_data], ignore_index=True)
-        df.to_csv(DATA_FILE, index=False)
+        
+        # 寫入檔案
+        if os.path.exists(DATA_FILE):
+            current_df = pd.read_csv(DATA_FILE)
+            updated_df = pd.concat([current_df, new_data], ignore_index=True)
+        else:
+            updated_df = new_data
+            
+        updated_df.to_csv(DATA_FILE, index=False)
         st.sidebar.success(t["success_save"])
-        st.rerun()
+        
+        # 💡 強制安全刷新的寫作方式
+        st.html("<script>parent.window.location.reload()</script>")
 
 # --- 權限鎖薪資過濾 ---
 if is_admin:
@@ -295,7 +299,7 @@ with tab1:
             df = df.drop(df.index[-1])
             df.to_csv(DATA_FILE, index=False)
             st.success(t["del_success"])
-            st.rerun()
+            st.html("<script>parent.window.location.reload()</script>")
     else:
         st.info(t["no_data"])
 
