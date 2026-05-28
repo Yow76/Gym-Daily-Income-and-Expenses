@@ -8,7 +8,6 @@ import base64
 st.set_page_config(page_title="TheOneGym Financial System", layout="wide")
 
 # --- 核心檔案與資料夾路徑設定 ---
-# 💡 升級到乾淨的新資料庫，彻底避開雲端伺服器對舊檔案的干擾
 DATA_FILE = "gym_records_v5.csv" 
 UPLOAD_DIR = "uploaded_receipts"
 if not os.path.exists(UPLOAD_DIR):
@@ -17,7 +16,7 @@ if not os.path.exists(UPLOAD_DIR):
 # 標準 10 大必備欄位
 standard_cols = ["日期", "類型", "大類項目", "細分項目", "金額", "支付方式", "卡片細分", "收據號", "證明文件", "備註"]
 
-# 🌟 核心記憶庫初始化：確保全劇資料只在啟動時載入一次，後續由記憶體即時接管
+# 🌟 核心記憶庫初始化
 if "gym_df" not in st.session_state:
     if os.path.exists(DATA_FILE):
         try:
@@ -36,7 +35,7 @@ if "gym_df" not in st.session_state:
 if "form_version" not in st.session_state:
     st.session_state.form_version = 0
 
-# 🌟【全新核心機制】採用安全的 On-Click 回呼函式，完全不使用 st.rerun()，徹底消滅黃色警告
+# 🌟 安全的 On-Click 回呼函式，完全不使用 st.rerun()
 def save_record_on_click(date_val, type_val, cat_val, sub_val, amt_val, pay_val, card_val, receipt_val, uploaded_file_obj, note_val):
     if amt_val <= 0:
         st.session_state.form_error = True
@@ -45,7 +44,6 @@ def save_record_on_click(date_val, type_val, cat_val, sub_val, amt_val, pay_val,
     st.session_state.form_error = False
     saved_file_path = "-"
     
-    # 處理支出憑證照片上傳
     if uploaded_file_obj is not None:
         try:
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -74,7 +72,6 @@ def save_record_on_click(date_val, type_val, cat_val, sub_val, amt_val, pay_val,
     st.session_state.gym_df = pd.concat([st.session_state.gym_df, new_df], ignore_index=True)
     st.session_state.gym_df.to_csv(DATA_FILE, index=False)
     
-    # 自動重置表單，並舉起成功通知旗幟
     st.session_state.form_version += 1
     st.session_state.form_success = True
 
@@ -97,7 +94,7 @@ def get_image_download_link(file_path, text):
             return f'<a href="data:application/octet-stream;base64,{b64}" download="{os.path.basename(file_path)}">{text}</a>'
     return "-"
 
-# --- 側邊欄：全局設定 (語言與管理員密碼) ---
+# --- 側邊欄 ---
 st.sidebar.markdown("### 🌐 System Settings / 系統設定")
 lang = st.sidebar.radio("Language / 語言", ["繁體中文", "English"])
 
@@ -195,7 +192,6 @@ texts = {
 
 t = texts[lang]
 
-# 顯示狀態彈窗提示 (在最安全的地方渲染，防止警告)
 if "form_error" in st.session_state and st.session_state.form_error:
     st.sidebar.error(t["err_amount"])
     st.session_state.form_error = False
@@ -204,8 +200,7 @@ if "form_success" in st.session_state and st.session_state.form_success:
     st.sidebar.success(t["success_save"])
     st.session_state.form_success = False
 
-# --- 側邊欄：數據輸入介面 ---
-st.sidebar.header(t["sidebar_header"])
+# --- 側邊欄輸入介面 ---
 v = st.session_state.form_version
 
 date_input = st.sidebar.date_input(t["date"], datetime.date.today(), key=f"date_{v}")
@@ -262,7 +257,6 @@ if payment_method in ["信用卡/Debit卡", "Credit/Debit Card"]:
 
 note = st.sidebar.text_input(t["note"], key=f"note_{v}")
 
-# 🌟 透過真正的 on_click 機制在頂層處理數據，全案 0 個 rerun 指令
 st.sidebar.button(
     t["save_btn"], 
     key="save_record_btn", 
@@ -270,9 +264,16 @@ st.sidebar.button(
     args=(date_input, trans_type, form_cat, form_sub, amount, payment_method, card_type, form_receipt, uploaded_file, note)
 )
 
-# --- 權限鎖薪資過濾 ---
+# --- 權限鎖過濾管理 ---
 df_active = st.session_state.gym_df.copy()
 df_active['日期'] = df_active['日期'].astype(str)
+
+# 💡 安全防禦：清洗數據庫，強制移除非法空行、非數字金額或髒數據，杜絕長度報錯
+try:
+    df_active['金額'] = pd.to_numeric(df_active['金額'], errors='coerce').fillna(0.0)
+    df_active = df_active[df_active['大類項目'].notnull() & (df_active['大類項目'] != "") & (df_active['大類項目'] != "-")]
+except:
+    pass
 
 if is_admin:
     display_df = df_active.copy()
@@ -301,9 +302,12 @@ with tab1:
         st.write("#### 記錄細分項目明細")
         day_inc_df = day_df[day_df['類型'] == "收入"]
         if not day_inc_df.empty:
-            day_summary = day_inc_df.groupby(["支付方式", "卡片細分"])["金額"].sum().reset_index()
-            day_summary.columns = [t["pay_method"], t["detail_col"], t["amount_col"]]
-            st.table(day_summary)
+            try:
+                day_summary = day_inc_df.groupby(["支付方式", "卡片細分"])["金額"].sum().reset_index()
+                day_summary.columns = [t["pay_method"], t["detail_col"], t["amount_col"]]
+                st.table(day_summary)
+            except:
+                st.dataframe(day_inc_df)
         else:
             st.info("今日暫無收入款項。")
             
@@ -315,7 +319,6 @@ with tab1:
     st.markdown("---")
     
     st.subheader(t["history_title"])
-    
     if "del_success" in st.session_state and st.session_state.del_success:
         st.success(t["del_success"])
         st.session_state.del_success = False
@@ -358,10 +361,18 @@ with tab2:
         st.write(f"### 📈 {selected_month} 各大核心業務收入佔比分析")
         inc_df = month_df[month_df['類型'] == "收入"]
         if not inc_df.empty:
-            cat_summary = inc_df.groupby("大類項目")["金額"].sum().reset_index()
-            cat_summary['百分比 (Percentage)'] = (cat_summary['金額'] / cat_summary['金額'].sum() * 100).map("{:.1f}%".format)
-            cat_summary.columns = ["業務核心項目 (Business Item)", "總收入 (RM)", "收入貢獻佔比"]
-            st.table(cat_summary)
+            # 💡【核心修正】採用更安全的計算模式，防止髒數據導致兩邊長度不一致而引發 ValueError
+            try:
+                cat_summary = inc_df.groupby("大類項目")["金額"].sum().reset_index()
+                total_inc_sum = cat_summary["金額"].sum()
+                if total_inc_sum > 0:
+                    cat_summary['百分比 (Percentage)'] = cat_summary['金額'].apply(lambda x: f"{(x / total_inc_sum * 100):.1f}%")
+                else:
+                    cat_summary['百分比 (Percentage)'] = "0.0%"
+                cat_summary.columns = ["業務核心項目 (Business Item)", "總收入 (RM)", "收入貢獻佔比"]
+                st.table(cat_summary)
+            except Exception as e:
+                st.dataframe(inc_df)
         else:
             st.info("本月暫無收入分析數據。")
             
@@ -369,9 +380,12 @@ with tab2:
         
         st.write(f"### 💳 {t['recon_title']} ({selected_month})")
         if not inc_df.empty:
-            pay_summary = inc_df.groupby(["支付方式", "卡片細分"])["金額"].sum().reset_index()
-            pay_summary.columns = [t["pay_method"], t["detail_col"], t["amount_col"]]
-            st.table(pay_summary)
+            try:
+                pay_summary = inc_df.groupby(["支付方式", "卡片細分"])["金額"].sum().reset_index()
+                pay_summary.columns = [t["pay_method"], t["detail_col"], t["amount_col"]]
+                st.table(pay_summary)
+            except:
+                st.dataframe(inc_df)
             
         month_csv = month_df.to_csv(index=False).encode('utf-8')
         st.download_button(label=f"📥 {t['download_csv']} ({selected_month}月報)", data=month_csv, file_name=f"Monthly_Report_{selected_month}.csv", mime='text/csv')
