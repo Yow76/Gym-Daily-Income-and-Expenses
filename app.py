@@ -8,7 +8,7 @@ import base64
 st.set_page_config(page_title="TheOneGym Financial System", layout="wide")
 
 # --- 核心檔案與資料夾路徑設定 ---
-# 💡 升級全新乾淨資料庫，徹底避開所有舊隱藏快取與干擾
+# 💡 升級到乾淨的新資料庫，彻底避開雲端伺服器對舊檔案的干擾
 DATA_FILE = "gym_records_v5.csv" 
 UPLOAD_DIR = "uploaded_receipts"
 if not os.path.exists(UPLOAD_DIR):
@@ -17,7 +17,7 @@ if not os.path.exists(UPLOAD_DIR):
 # 標準 10 大必備欄位
 standard_cols = ["日期", "類型", "大類項目", "細分項目", "金額", "支付方式", "卡片細分", "收據號", "證明文件", "備註"]
 
-# 🌟 核心記憶庫初始化：確保全局資料只在啟動時載入一次，後續由記憶體即時接管
+# 🌟 核心記憶庫初始化：確保全劇資料只在啟動時載入一次，後續由記憶體即時接管
 if "gym_df" not in st.session_state:
     if os.path.exists(DATA_FILE):
         try:
@@ -262,7 +262,7 @@ if payment_method in ["信用卡/Debit卡", "Credit/Debit Card"]:
 
 note = st.sidebar.text_input(t["note"], key=f"note_{v}")
 
-# 🌟 透過 on_click 機制在頂層處理數據，全案 0 個 rerun 指令
+# 🌟 透過真正的 on_click 機制在頂層處理數據，全案 0 個 rerun 指令
 st.sidebar.button(
     t["save_btn"], 
     key="save_record_btn", 
@@ -298,7 +298,7 @@ with tab1:
         c2.metric("今日總支出 / Today Expense", f"RM {day_expense:,.2f}")
         c3.metric("今日結餘結算 / Today Balance", f"RM {day_net:,.2f}")
         
-        st.write("#### 💳 今日支付方式細分 (Today Payments Breakdown)")
+        st.write("#### 記錄細分項目明細")
         day_inc_df = day_df[day_df['類型'] == "收入"]
         if not day_inc_df.empty:
             day_summary = day_inc_df.groupby(["支付方式", "卡片細分"])["金額"].sum().reset_index()
