@@ -52,7 +52,7 @@ lang = st.sidebar.radio("Language / 語言", ["繁體中文", "English"])
 
 st.sidebar.markdown("---")
 admin_password = st.sidebar.text_input("🔑 Admin Password / 管理員密碼", type="password")
-is_admin = (admin_password == "8888") # 預設密碼 8888
+is_admin = (admin_password == "8888") # 預設管理員密碼為 8888
 
 # --- 雙語翻譯字典 ---
 texts = {
@@ -180,7 +180,7 @@ if trans_type in ["收入", "Income"]:
         form_sub = gc_sessions if gc_sessions.strip() else "Group Class"
         
     elif form_cat == "Drinks / Merchandise":
-        drinks_options = ["水 1.5L", "水 500ml", "100 號 (100 Plus)", "Vida", "Protein (乳清蛋白)", "Others"]
+        drinks_options = ["Mineral water 1.5L", "Mineral water 500ml", "100 號 (100 Plus)", "Vida", "Protein (乳清蛋白)", "Others"]
         form_sub = st.sidebar.selectbox(t["sub_item"], drinks_options)
         
     elif form_cat == "Others":
@@ -214,7 +214,6 @@ if payment_method in ["信用卡/Debit卡", "Credit/Debit Card"]:
 
 note = st.sidebar.text_input(t["note"])
 
-# 💡【優化點】利用 Streamlit 最穩定的機制來觸發重整，解決舊版 rerun 引起的 Exception
 if st.sidebar.button(t["save_btn"]):
     if amount <= 0:
         st.sidebar.error(t["err_amount"])
@@ -227,7 +226,6 @@ if st.sidebar.button(t["save_btn"]):
             "卡片細分": card_type, "收據號": final_receipt, "證明文件": saved_file_path, "備註": note
         }])
         
-        # 寫入檔案
         if os.path.exists(DATA_FILE):
             current_df = pd.read_csv(DATA_FILE)
             updated_df = pd.concat([current_df, new_data], ignore_index=True)
@@ -236,9 +234,7 @@ if st.sidebar.button(t["save_btn"]):
             
         updated_df.to_csv(DATA_FILE, index=False)
         st.sidebar.success(t["success_save"])
-        
-        # 💡 強制安全刷新的寫作方式
-        st.html("<script>parent.window.location.reload()</script>")
+        st.rerun()
 
 # --- 權限鎖薪資過濾 ---
 if is_admin:
@@ -299,7 +295,7 @@ with tab1:
             df = df.drop(df.index[-1])
             df.to_csv(DATA_FILE, index=False)
             st.success(t["del_success"])
-            st.html("<script>parent.window.location.reload()</script>")
+            st.rerun()
     else:
         st.info(t["no_data"])
 
